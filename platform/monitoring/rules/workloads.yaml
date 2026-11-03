@@ -1,0 +1,35 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: workloads
+  namespace: monitoring
+spec:
+  groups:
+    - name: workloads
+      rules:
+        - alert: PodRestartingOften
+          expr: increase(kube_pod_container_status_restarts_total[15m]) > 3
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.namespace }}/{{ $labels.pod }} restarted more than 3 times in 15 minutes"
+            description: Container {{ $labels.container }} keeps restarting.
+            runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#podrestartingoften
+        # Restarted after an OOM kill, or terminated by one (Job pods are not restarted).
+        - alert: ContainerOOMKilled
+          expr: |
+            max by (namespace, pod, container) (
+              kube_pod_container_status_terminated_reason{reason="OOMKilled"}
+            ) == 1
+            or
+            (
+              max by (namespace, pod, container) (increase(kube_pod_container_status_restarts_total[10m])) >= 1
+              and on (namespace, pod, container)
+              max by (namespace, pod, container) (kube_pod_container_status_last_terminated_reason{reason="OOMKilled"}) == 1
+            )
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.namespace }}/{{ $labels.pod }} was OOM killed"
+            description: Container {{ $labels.container }} hit its memory limit.
+            runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#containeroomkilled

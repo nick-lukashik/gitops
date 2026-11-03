@@ -1,0 +1,181 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+# api kind (NestJS), after components/service: migrate Job before the
+# rollout, metrics port 9464 with a ServiceMonitor, pod label kind=api,
+# NetworkPolicy rules (ingress: api clients and Prometheus; egress: data stores
+# and public HTTPS), api resources.
+resources:
+  - api.yaml
+patches:
+  - target:
+      kind: IngressRoute
+    patch: |-
+      - op: replace
+        path: /metadata/annotations/nl-gitops~1smoke-paths
+        value: /openapi.json
+  - target:
+      kind: Deployment
+      labelSelector: app.kubernetes.io/component=server
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: any
+      spec:
+        template:
+          metadata:
+            labels:
+              # Destination of the api-clients egress policy (platform/policies/prod.yaml).
+              nick-lukashik.com/kind: api
+          spec:
+            containers:
+              - name: app
+                env:
+                  - name: METRICS_PORT
+                    value: "9464"
+                ports:
+                  - name: metrics
+                    containerPort: 9464
+                resources:
+                  requests:
+                    cpu: 100m
+                    memory: 192Mi
+                  limits:
+                    memory: 512Mi
+  - target:
+      kind: Service
+    patch: |-
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: any
+      spec:
+        ports:
+          - name: metrics
+            port: 9464
+            targetPort: metrics
+  # 1 MiB request body limit at the edge (Traefik buffering). Only for api:
+  # JSON responses lose nothing when buffered; web enforces the limit in the app.
+  - target:
+      kind: IngressRoute
+    patch: |-
+      - op: add
+        path: /spec/routes/0/middlewares/-
+        value:
+          name: body-limit@file
+  # Appended to the rules of components/service (Traefik in, DNS out).
+  - target:
+      kind: NetworkPolicy
+      labelSelector: app.kubernetes.io/component=server
+    patch: |-
+      # Server-side callers: pods with the api-client label (components/web)
+      # in the same namespace, on the http port.
+      - op: add
+        path: /spec/ingress/-
+        value:
+          from:
+            - podSelector:
+                matchLabels:
+                  nick-lukashik.com/api-client: "true"
+          ports:
+            - port: http
+      # Prometheus, on the metrics port only.
+      - op: add
+        path: /spec/ingress/-
+        value:
+          from:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: monitoring
+              podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: prometheus
+          ports:
+            - port: metrics
+      # Data stores of stage 3 (CNPG, Redis, RabbitMQ): namespaces labelled
+      # data=true, any port.
+      - op: add
+        path: /spec/egress/-
+        value:
+          to:
+            - namespaceSelector:
+                matchLabels:
+                  nick-lukashik.com/data: "true"
+      # Public HTTPS (payment providers, email, R2). Not private, CGNAT
+      # (Tailscale), link-local (metadata), loopback or "this network"
+      # addresses; the cluster CIDRs of K3s (pods 10.42.0.0/16, services
+      # 10.43.0.0/16) are inside 10.0.0.0/8. The cluster is IPv4 only.
+      - op: add
+        path: /spec/egress/-
+        value:
+          to:
+            - ipBlock:
+                cidr: 0.0.0.0/0
+                except:
+                  - 0.0.0.0/8
+                  - 10.0.0.0/8
+                  - 100.64.0.0/10
+                  - 127.0.0.0/8
+                  - 169.254.0.0/16
+                  - 172.16.0.0/12
+                  - 192.168.0.0/16
+          ports:
+            - port: 443
+              protocol: TCP
+replacements:
+  - source:
+      kind: ConfigMap
+      name: service
+      fieldPath: data.name
+    targets:
+      - select:
+          kind: Job
+        fieldPaths:
+          - metadata.labels.[app.kubernetes.io/name]
+          - spec.template.metadata.labels.[app.kubernetes.io/name]
+      # SERVICE-migrate
+      - select:
+          kind: Job
+        fieldPaths:
+          - metadata.name
+        options:
+          delimiter: "-"
+          index: 0
+      # ghcr.io/nick-lukashik/SERVICE
+      - select:
+          kind: Job
+        fieldPaths:
+          - spec.template.spec.containers.[name=migrate].image
+        options:
+          delimiter: /
+          index: 2
+      # SERVICE-config, SERVICE-secrets
+      - select:
+          kind: Job
+        fieldPaths:
+          - spec.template.spec.containers.[name=migrate].envFrom.0.configMapRef.name
+          - spec.template.spec.containers.[name=migrate].envFrom.1.secretRef.name
+        options:
+          delimiter: "-"
+          index: 0
+      - select:
+          kind: ServiceMonitor
+        fieldPaths:
+          - metadata.name
+          - metadata.labels.[app.kubernetes.io/name]
+          - spec.selector.matchLabels.[app.kubernetes.io/name]
+      # NetworkPolicy SERVICE-migrate (the service policy is named already).
+      - select:
+          kind: NetworkPolicy
+          name: SERVICE-migrate
+        fieldPaths:
+          - metadata.labels.[app.kubernetes.io/name]
+          - spec.podSelector.matchLabels.[app.kubernetes.io/name]
+      - select:
+          kind: NetworkPolicy
+          name: SERVICE-migrate
+        fieldPaths:
+          - metadata.name
+        options:
+          delimiter: "-"
+          index: 0

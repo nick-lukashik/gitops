@@ -1,0 +1,61 @@
+# Ingress allow-lists of namespace monitoring; everything else is denied
+# (platform/policies/monitoring.yaml). Loki and Grafana have their own
+# policies next to their charts.
+
+# Prometheus reaches every pod here: the ServiceMonitors of kube-state-metrics,
+# the operator, Alertmanager (and its alerts on 9093), Prometheus itself,
+# Grafana and Loki.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: from-prometheus
+  namespace: monitoring
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+---
+# Prometheus API: Grafana (datasource) and Prometheus itself (above).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: prometheus
+  namespace: monitoring
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: prometheus
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: grafana
+      ports:
+        - port: 9090
+---
+# Alertmanager API: Prometheus (above) and Grafana.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: alertmanager
+  namespace: monitoring
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: alertmanager
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: grafana
+      ports:
+        - port: 9093

@@ -1,0 +1,70 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: node
+  namespace: monitoring
+spec:
+  groups:
+    - name: node
+      rules:
+        - alert: NodeDiskUsageHigh
+          expr: |
+            100 * (1 - node_filesystem_avail_bytes{fstype=~"ext[234]|xfs|btrfs"}
+              / node_filesystem_size_bytes{fstype=~"ext[234]|xfs|btrfs"}) > 80
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: Disk {{ $labels.mountpoint }} is {{ printf "%.0f" $value }}% full
+            description: More than 80% of {{ $labels.device }} on {{ $labels.instance }} is used.
+            runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#nodediskusagehigh
+        - alert: NodeDiskUsageCritical
+          expr: |
+            100 * (1 - node_filesystem_avail_bytes{fstype=~"ext[234]|xfs|btrfs"}
+              / node_filesystem_size_bytes{fstype=~"ext[234]|xfs|btrfs"}) > 90
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: Disk {{ $labels.mountpoint }} is {{ printf "%.0f" $value }}% full
+            description: More than 90% of {{ $labels.device }} on {{ $labels.instance }} is used.
+            runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#nodediskusagecritical
+        # Fast growth (a log storm, image pulls, a runaway emptyDir) on the disk
+        # that also holds etcd, images and every local-path volume. Fires while
+        # there is still room, before the kubelet evicts pods at
+        # nodefs.available<10% (infra node/k3s/config.yaml, eviction-hard).
+        # NodeFilesystemSpaceFillingUp of kube-prometheus-stack fires only below
+        # 15% free, too late for that.
+        - alert: NodeDiskFillingUp
+          expr: |
+            predict_linear(node_filesystem_avail_bytes{fstype=~"ext[234]|xfs|btrfs"}[1h], 6 * 3600)
+              < 0.10 * node_filesystem_size_bytes{fstype=~"ext[234]|xfs|btrfs"}
+            and
+            node_filesystem_avail_bytes{fstype=~"ext[234]|xfs|btrfs"}
+              > 0.10 * node_filesystem_size_bytes{fstype=~"ext[234]|xfs|btrfs"}
+          for: 15m
+          labels:
+            severity: critical
+          annotations:
+            summary: Disk {{ $labels.mountpoint }} reaches the eviction threshold within 6 hours
+            description: At the growth rate of the last hour less than 10% of {{ $labels.device }} on {{ $labels.instance }} is free in 6 hours; the kubelet then evicts pods and etcd runs out of room.
+            runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#nodediskfillingup
+        - alert: NodeMemoryLow
+          expr: node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 0.10
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: Less than 10% memory available on {{ $labels.instance }}
+            description: Available memory has been below 10% for 10 minutes.
+            runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#nodememorylow
+        # node_reboot_required: textfile metric written by infra (nl-reboot-required.timer).
+        - alert: NodeRebootRequired
+          expr: node_reboot_required == 1
+          for: 24h
+          labels:
+            severity: warning
+          annotations:
+            summary: Reboot required on {{ $labels.instance }}
+            description: Updates that need a reboot have been pending for 24 hours.
+            runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#noderebootrequired

@@ -1,0 +1,144 @@
+# promtool test rules; rule file is extracted from ../node.yaml by scripts/check-rules.sh.
+rule_files:
+  - node.rules.yaml
+evaluation_interval: 1m
+tests:
+  - name: disk 85% full, tmpfs ignored
+    interval: 1m
+    input_series:
+      - series: 'node_filesystem_avail_bytes{instance="node",device="/dev/vda1",mountpoint="/",fstype="ext4"}'
+        values: '15x30'
+      - series: 'node_filesystem_size_bytes{instance="node",device="/dev/vda1",mountpoint="/",fstype="ext4"}'
+        values: '100x30'
+      - series: 'node_filesystem_avail_bytes{instance="node",device="tmpfs",mountpoint="/run",fstype="tmpfs"}'
+        values: '1x30'
+      - series: 'node_filesystem_size_bytes{instance="node",device="tmpfs",mountpoint="/run",fstype="tmpfs"}'
+        values: '100x30'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: NodeDiskUsageHigh
+        exp_alerts: []
+      - eval_time: 11m
+        alertname: NodeDiskUsageHigh
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              instance: node
+              device: /dev/vda1
+              mountpoint: /
+              fstype: ext4
+            exp_annotations:
+              summary: Disk / is 85% full
+              description: More than 80% of /dev/vda1 on node is used.
+              runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#nodediskusagehigh
+      - eval_time: 11m
+        alertname: NodeDiskUsageCritical
+        exp_alerts: []
+
+  - name: disk 95% full
+    interval: 1m
+    input_series:
+      - series: 'node_filesystem_avail_bytes{instance="node",device="/dev/vda1",mountpoint="/",fstype="ext4"}'
+        values: '5x30'
+      - series: 'node_filesystem_size_bytes{instance="node",device="/dev/vda1",mountpoint="/",fstype="ext4"}'
+        values: '100x30'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: NodeDiskUsageCritical
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              instance: node
+              device: /dev/vda1
+              mountpoint: /
+              fstype: ext4
+            exp_annotations:
+              summary: Disk / is 95% full
+              description: More than 90% of /dev/vda1 on node is used.
+              runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#nodediskusagecritical
+
+  - name: disk filling fast reaches the eviction threshold within 6h
+    interval: 1m
+    input_series:
+      # 60% free, losing 0.2% a minute: below 10% free in about 4 hours.
+      - series: 'node_filesystem_avail_bytes{instance="node",device="/dev/vda1",mountpoint="/",fstype="ext4"}'
+        values: '60-0.2x60'
+      - series: 'node_filesystem_size_bytes{instance="node",device="/dev/vda1",mountpoint="/",fstype="ext4"}'
+        values: '100x60'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: NodeDiskFillingUp
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: NodeDiskFillingUp
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              instance: node
+              device: /dev/vda1
+              mountpoint: /
+              fstype: ext4
+            exp_annotations:
+              summary: Disk / reaches the eviction threshold within 6 hours
+              description: At the growth rate of the last hour less than 10% of /dev/vda1 on node is free in 6 hours; the kubelet then evicts pods and etcd runs out of room.
+              runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#nodediskfillingup
+
+  - name: slow growth and a full but steady disk do not count as filling up
+    interval: 1m
+    input_series:
+      # 60% free, losing 0.01% a minute: 56% free in 6 hours.
+      - series: 'node_filesystem_avail_bytes{instance="node",device="/dev/vda1",mountpoint="/",fstype="ext4"}'
+        values: '60-0.01x90'
+      - series: 'node_filesystem_size_bytes{instance="node",device="/dev/vda1",mountpoint="/",fstype="ext4"}'
+        values: '100x90'
+      # Steady at 8% free: NodeDiskUsageCritical, not this alert.
+      - series: 'node_filesystem_avail_bytes{instance="node",device="/dev/vdb1",mountpoint="/data",fstype="ext4"}'
+        values: '8x90'
+      - series: 'node_filesystem_size_bytes{instance="node",device="/dev/vdb1",mountpoint="/data",fstype="ext4"}'
+        values: '100x90'
+    alert_rule_test:
+      - eval_time: 80m
+        alertname: NodeDiskFillingUp
+        exp_alerts: []
+
+  - name: memory below 10%
+    interval: 1m
+    input_series:
+      - series: 'node_memory_MemAvailable_bytes{instance="node"}'
+        values: '20 5x20'
+      - series: 'node_memory_MemTotal_bytes{instance="node"}'
+        values: '100x21'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: NodeMemoryLow
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: NodeMemoryLow
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              instance: node
+            exp_annotations:
+              summary: Less than 10% memory available on node
+              description: Available memory has been below 10% for 10 minutes.
+              runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#nodememorylow
+
+  - name: reboot pending for 24h
+    interval: 1m
+    input_series:
+      - series: 'node_reboot_required{instance="node"}'
+        values: '1x1500'
+    alert_rule_test:
+      - eval_time: 23h
+        alertname: NodeRebootRequired
+        exp_alerts: []
+      - eval_time: 24h10m
+        alertname: NodeRebootRequired
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              instance: node
+            exp_annotations:
+              summary: Reboot required on node
+              description: Updates that need a reboot have been pending for 24 hours.
+              runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#noderebootrequired

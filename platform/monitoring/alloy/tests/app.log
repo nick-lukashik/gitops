@@ -1,0 +1,5 @@
+{"level":30,"msg":"login","token":"abc","password":"pa\"ss1","accessToken":"tok1","code":"123456","statusCode":200}
+{"level":50,"msg":"auth failed","authorization":"Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnbmF0dXJl","cookie":"sid=cookie1"}
+{"level":"WARNING","msg":"numeric code","code":4321,"client_secret":"sec1"}
+plain text line with Authorization: Bearer bearer1.part done
+{"level":"info","msg":"jwt in text eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIyIn0.c2lnMg end"}

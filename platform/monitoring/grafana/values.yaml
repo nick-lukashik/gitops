@@ -1,0 +1,114 @@
+# Grafana (grafana-community chart). Loaded after components/settings/settings.yaml:
+# grafana.ini strings go through tpl, so {{ .Values.domain }} works there.
+# Access until the admin console (stage E4): port-forward only (docs/runbook/access.md).
+
+priorityClassName: platform-critical
+
+# Random password from SealedSecret grafana-admin; the login form is off, so
+# nobody signs in with it. Settings change only through this file.
+admin:
+  existingSecret: grafana-admin
+  userKey: admin-user
+  passwordKey: admin-password
+
+# Auth proxy accepts requests only from the K3s pod network (Traefik).
+# The CIDR comes from SealedSecret grafana-auth-proxy (SECRETS.md), not from git.
+envValueFrom:
+  GF_AUTH_PROXY_WHITELIST:
+    secretKeyRef:
+      name: grafana-auth-proxy
+      key: whitelist
+      optional: true
+
+grafana.ini:
+  server:
+    root_url: "https://admin.{{ .Values.domain }}/grafana/"
+    serve_from_sub_path: true
+  auth:
+    disable_login_form: true
+    disable_signout_menu: true
+  auth.basic:
+    enabled: false
+  auth.proxy:
+    enabled: true
+    header_name: X-WEBAUTH-USER
+    header_property: username
+    headers: "Email:X-WEBAUTH-EMAIL Name:X-WEBAUTH-NAME Role:X-WEBAUTH-ROLE"
+    headers_encoded: true
+    auto_sign_up: true
+  # Port-forward access until the admin gate exists (E4). Set enabled: false
+  # together with enabling admin-route in config/kustomization.yaml.
+  auth.anonymous:
+    enabled: true
+    org_name: Main Org.
+    org_role: Editor
+  users:
+    allow_sign_up: false
+    allow_org_create: false
+    auto_assign_org: true
+    auto_assign_org_role: Editor
+  log:
+    mode: console
+  log.console:
+    format: json
+  analytics:
+    reporting_enabled: false
+    check_for_updates: false
+    check_for_plugin_updates: false
+  security:
+    disable_gravatar: true
+
+datasources:
+  datasources.yaml:
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        uid: prometheus
+        type: prometheus
+        access: proxy
+        url: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
+        isDefault: true
+        editable: false
+      - name: Loki
+        uid: loki
+        type: loki
+        access: proxy
+        url: http://loki.monitoring.svc.cluster.local:3100
+        editable: false
+
+persistence:
+  enabled: true
+  type: pvc
+  storageClassName: local-path
+  size: 1Gi
+
+# local-path volumes are writable by any UID; the root chown init container
+# would break Pod Security "restricted".
+initChownData:
+  enabled: false
+
+readinessProbe:
+  httpGet:
+    path: /grafana/api/health
+    port: grafana
+livenessProbe:
+  httpGet:
+    path: /grafana/api/health
+    port: grafana
+  initialDelaySeconds: 60
+  timeoutSeconds: 30
+  failureThreshold: 10
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    memory: 256Mi
+
+testFramework:
+  enabled: false
+
+serviceMonitor:
+  enabled: true
+  path: /grafana/metrics

@@ -1,0 +1,51 @@
+name: verify
+
+# Called by ci.yml as job "ci", so the check is "ci / verify" like in the
+# service repos. make verify for any change; make static (plain secrets, domain,
+# shellcheck, actionlint) when the PR changes only *.md files.
+
+on:
+  workflow_call:
+
+permissions: {}
+
+jobs:
+  verify:
+    name: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The PR merge commit and its first parent, the head of master.
+          fetch-depth: 2
+
+      - name: Scope
+        id: scope
+        run: |
+          # A failing git diff fails the job: it never falls back to the cheap checks.
+          files=$(git diff --name-only HEAD^1 HEAD)
+          printf '%s\n' "$files"
+          if [ -n "$files" ] && ! grep -qv '\.md$' <<< "$files"; then
+            echo "target=static" >> "$GITHUB_OUTPUT"
+          else
+            echo "target=verify" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Helm charts and kubeconform schemas; keyed on the pinned versions.
+      - if: steps.scope.outputs.target == 'verify'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            .cache/charts
+            .cache/kubeconform
+          key: verify-${{ hashFiles('platform/**/application.yaml', 'scripts/lib.sh') }}
+          restore-keys: verify-
+
+      - name: make ${{ steps.scope.outputs.target }}
+        env:
+          TARGET: ${{ steps.scope.outputs.target }}
+        run: make "$TARGET"

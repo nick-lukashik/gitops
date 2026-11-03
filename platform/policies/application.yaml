@@ -1,0 +1,28 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: policies
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-15"
+spec:
+  project: platform
+  destination:
+    server: https://kubernetes.default.svc
+  source:
+    repoURL: git@github.com:nick-lukashik/gitops.git
+    targetRevision: master
+    path: platform/policies
+  syncPolicy:
+    automated:
+      # Namespaces are never pruned automatically.
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

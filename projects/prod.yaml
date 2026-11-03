@@ -1,0 +1,27 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: prod
+  namespace: argocd
+  annotations:
+    # Recipients "<chat id>|<topic id>" are filled from components/settings.
+    notifications.argoproj.io/subscribe.on-sync-failed.telegram: "CHAT|TOPIC"
+    notifications.argoproj.io/subscribe.on-health-degraded.telegram: "CHAT|TOPIC"
+    notifications.argoproj.io/subscribe.on-sync-status-unknown.telegram: "CHAT|TOPIC"
+    notifications.argoproj.io/subscribe.on-deployed.telegram: "CHAT|TOPIC"
+spec:
+  description: Services in namespace prod. No cluster-scoped resources.
+  sourceRepos:
+    - git@github.com:nick-lukashik/gitops.git
+    # Same repo over HTTPS: it is public, the switch is optional (docs/runbook/access.md).
+    - https://github.com/nick-lukashik/gitops.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: prod
+  clusterResourceWhitelist: []
+  # Quotas and limits of prod belong to platform/policies.
+  namespaceResourceBlacklist:
+    - group: ""
+      kind: ResourceQuota
+    - group: ""
+      kind: LimitRange

@@ -1,0 +1,7 @@
+.cache/
+.DS_Store
+# Plain secrets never go to git: seal them (SECRETS.md).
+*.secret.yaml
+*.key
+*.pem
+!platform/traefik-config/cloudflare-origin-pull-ca.pem

@@ -1,0 +1,174 @@
+// Grafana Alloy pipeline: pod logs (Kubernetes API) and journald -> Loki.
+// Labels: namespace, app, level, container only; pod goes to structured metadata.
+// Secrets are masked in the last stage (loki.process "mask"), before anything leaves the node.
+// Checked in CI by scripts/check-alloy.sh (syntax and masking test).
+
+logging {
+  level  = "info"
+  format = "json"
+}
+
+// ---- Pod logs ----
+discovery.kubernetes "pods" {
+  role = "pod"
+}
+
+discovery.relabel "pods" {
+  targets = discovery.kubernetes.pods.targets
+
+  rule {
+    source_labels = ["__meta_kubernetes_namespace"]
+    target_label  = "namespace"
+  }
+  rule {
+    source_labels = ["__meta_kubernetes_pod_container_name"]
+    target_label  = "container"
+  }
+  // app: app.kubernetes.io/name, else label app, else the controller name.
+  rule {
+    source_labels = [
+      "__meta_kubernetes_pod_label_app_kubernetes_io_name",
+      "__meta_kubernetes_pod_label_app",
+      "__meta_kubernetes_pod_controller_name",
+    ]
+    separator    = ";"
+    regex        = "^;*([^;]+).*$"
+    replacement  = "$1"
+    target_label = "app"
+  }
+  // Moved to structured metadata in loki.process "pods".
+  rule {
+    source_labels = ["__meta_kubernetes_pod_name"]
+    target_label  = "pod"
+  }
+}
+
+loki.source.kubernetes "pods" {
+  targets    = discovery.relabel.pods.output
+  forward_to = [loki.process.pods.receiver]
+}
+
+loki.process "pods" {
+  // Redis cannot log JSON: rebuild its lines as JSON.
+  stage.match {
+    selector = "{app=\"redis\"}"
+
+    stage.regex {
+      expression = "^(?P<pid>\\d+):(?P<role>[XCSM]) (?P<ts>\\d+ \\w+ \\d{4} [\\d:.]+) (?P<mark>[.*#-]) (?P<msg>.*)$"
+    }
+    stage.template {
+      source   = "level"
+      template = "{{ if eq .mark \".\" }}debug{{ else if eq .mark \"#\" }}warn{{ else }}info{{ end }}"
+    }
+    stage.template {
+      source   = "json_line"
+      template = "{{ dict \"level\" .level \"msg\" .msg \"pid\" .pid \"role\" .role \"redis_time\" .ts | toJson }}"
+    }
+    stage.output {
+      source = "json_line"
+    }
+  }
+
+  stage.json {
+    expressions = {
+      level = "",
+    }
+  }
+  // pino numeric levels -> names; any other value -> lower case; no level -> no label.
+  stage.template {
+    source   = "level"
+    template = "{{ with .Value }}{{ $l := ToLower (toString .) }}{{ if eq $l \"10\" }}trace{{ else if eq $l \"20\" }}debug{{ else if eq $l \"30\" }}info{{ else if eq $l \"40\" }}warn{{ else if eq $l \"50\" }}error{{ else if eq $l \"60\" }}fatal{{ else if eq $l \"warning\" }}warn{{ else }}{{ $l }}{{ end }}{{ end }}"
+  }
+  stage.labels {
+    values = {
+      level = "",
+    }
+  }
+  stage.structured_metadata {
+    values = {
+      pod = "",
+    }
+  }
+  forward_to = [loki.process.mask.receiver]
+}
+
+// ---- journald (K3s, kernel, sshd) ----
+loki.relabel "journal" {
+  forward_to = []
+
+  rule {
+    source_labels = ["__journal__systemd_unit"]
+    target_label  = "app"
+  }
+  rule {
+    source_labels = ["__journal__transport"]
+    regex         = "kernel"
+    replacement   = "kernel"
+    target_label  = "app"
+  }
+}
+
+loki.source.journal "node" {
+  path           = "/var/log/journal"
+  format_as_json = true
+  max_age        = "12h"
+  labels         = {
+    namespace = "node",
+  }
+  relabel_rules  = loki.relabel.journal.rules
+  forward_to     = [loki.process.journal.receiver]
+}
+
+loki.process "journal" {
+  stage.json {
+    expressions = {
+      priority = "PRIORITY",
+    }
+  }
+  stage.template {
+    source   = "level"
+    template = "{{ $p := toString .priority }}{{ if has $p (list \"0\" \"1\" \"2\") }}fatal{{ else if eq $p \"3\" }}error{{ else if eq $p \"4\" }}warn{{ else if eq $p \"7\" }}debug{{ else }}info{{ end }}"
+  }
+  stage.labels {
+    values = {
+      level = "",
+    }
+  }
+  forward_to = [loki.process.mask.receiver]
+}
+
+// ---- Masking, last stage before Loki ----
+loki.process "mask" {
+  // JSON string values of keys containing password, token, authorization, cookie, secret.
+  stage.replace {
+    expression = "(?i)\"[^\"]*(?:password|token|authorization|cookie|secret)[^\"]*\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\""
+    replace    = "[redacted]"
+  }
+  // JSON key "code" (one-time and OAuth codes), string value.
+  stage.replace {
+    expression = "(?i)\"code\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\""
+    replace    = "[redacted]"
+  }
+  // Same keys with a numeric value; the number becomes a JSON string.
+  stage.replace {
+    expression = "(?i)\"(?:[^\"]*(?:password|token|secret)[^\"]*|code)\"\\s*:\\s*(-?[0-9]+)"
+    replace    = "\"[redacted]\""
+  }
+  // Bearer tokens anywhere in the line.
+  stage.replace {
+    expression = "(?i)bearer\\s+([A-Za-z0-9._~+/=-]+)"
+    replace    = "[redacted]"
+  }
+  // JWTs anywhere in the line.
+  stage.replace {
+    expression = "(eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]*)"
+    replace    = "[redacted]"
+  }
+  forward_to = [loki.write.default.receiver]
+}
+
+loki.write "default" {
+  endpoint {
+    url = "http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push"
+  }
+}

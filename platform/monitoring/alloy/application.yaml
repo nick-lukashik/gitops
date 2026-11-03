@@ -1,0 +1,36 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: alloy
+  namespace: argocd
+spec:
+  project: platform
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring-node
+  sources:
+    - repoURL: https://grafana.github.io/helm-charts
+      chart: alloy
+      targetRevision: 1.15.0
+      helm:
+        releaseName: alloy
+        valueFiles:
+          - $values/platform/monitoring/alloy/values.yaml
+    - repoURL: git@github.com:nick-lukashik/gitops.git
+      targetRevision: master
+      ref: values
+    - repoURL: git@github.com:nick-lukashik/gitops.git
+      targetRevision: master
+      path: platform/monitoring/alloy/config
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

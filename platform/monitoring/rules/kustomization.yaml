@@ -1,0 +1,8 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# Each rule has severity and runbook_url; unit tests in tests/ (make rules).
+resources:
+  - node.yaml
+  - workloads.yaml
+  - platform.yaml
+  - services.yaml

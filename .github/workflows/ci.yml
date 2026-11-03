@@ -1,0 +1,22 @@
+name: ci
+
+# Runs on every PR to master, docs-only PRs included: the master ruleset requires
+# the check "ci / verify" (caller job ci, called job verify of verify.yml), so
+# it must always report, never be skipped by a paths filter. verify.yml runs
+# the cheap checks when only *.md files change.
+
+on:
+  pull_request:
+    branches: [master]
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  ci:
+    uses: ./.github/workflows/verify.yml
+    permissions:
+      contents: read

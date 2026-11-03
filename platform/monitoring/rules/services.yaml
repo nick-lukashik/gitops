@@ -1,0 +1,83 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: services
+  namespace: monitoring
+spec:
+  groups:
+    # Degraded states of api services (service runtime contract in nick-lukashik/.github, "Degradation"
+    # and "Messaging"). The metrics come from the api metrics port (ServiceMonitor
+    # of components/api), so every series has namespace and service labels.
+    - name: services
+      rules:
+        - alert: ServiceDatabaseErrors
+          expr: sum by (namespace, service) (increase(http_server_database_failures_total[5m])) > 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.namespace }}/{{ $labels.service }} fails requests on the database"
+            description: Requests end with 503 on Postgres timeouts, lock waits or a busy pool.
+            runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#servicedatabaseerrors
+        - alert: ServiceBrokerDown
+          expr: min by (namespace, service) (messaging_broker_up) == 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.namespace }}/{{ $labels.service }} has no RabbitMQ connection"
+            description: Writes still succeed; events wait in the outbox until the broker is back.
+            runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#servicebrokerdown
+        - alert: ServiceConsumerDown
+          expr: min by (namespace, service, queue) (messaging_consumer_up) == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "{{ $labels.namespace }}/{{ $labels.service }} does not consume {{ $labels.queue }}"
+            description: The consumer keeps failing to re-subscribe; events for this queue are not processed.
+            runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#serviceconsumerdown
+        - alert: OutboxEventsStuck
+          expr: max by (namespace, service) (outbox_oldest_pending_seconds) > 300
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "{{ $labels.namespace }}/{{ $labels.service }} has events unpublished for over 5 minutes"
+            description: The oldest pending outbox event is {{ $value | humanizeDuration }} old.
+            runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#outboxeventsstuck
+        # No `for`: one returned message already means a topology bug.
+        - alert: OutboxEventsUnroutable
+          expr: sum by (namespace, service) (increase(outbox_publish_failures_total{reason="unroutable"}[10m])) > 0
+          labels:
+            severity: critical
+          annotations:
+            summary: "{{ $labels.namespace }}/{{ $labels.service }} publishes events no queue receives"
+            description: RabbitMQ returned published events (no bound queue); they stay in the outbox and are retried.
+            runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#outboxeventsunroutable
+        # No `for`: a dead letter is an event no consumer will retry; it waits for a replay.
+        - alert: ServiceEventsDeadLettered
+          expr: sum by (namespace, service, queue) (increase(messaging_events_consumed_total{outcome="dead_lettered"}[10m])) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.namespace }}/{{ $labels.service }} dead-lettered events of {{ $labels.queue }}"
+            description: Events failed every retry or were invalid; they wait in the dead-letter queue for a fix and a replay.
+            runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#serviceeventsdeadlettered
+        - alert: ServiceRedisDown
+          expr: min by (namespace, service) (redis_up) == 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.namespace }}/{{ $labels.service }} has no Redis connection"
+            description: The cache is bypassed and the rate limiter is open.
+            runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#serviceredisdown
+        - alert: RateLimitFailingOpen
+          expr: sum by (namespace, service) (increase(rate_limit_fail_open_total[10m])) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.namespace }}/{{ $labels.service }} lets requests through without a rate limit"
+            description: The rate limiter could not reach Redis and failed open.
+            runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#ratelimitfailingopen

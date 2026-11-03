@@ -1,0 +1,41 @@
+# Argo CD manages itself without self-heal: a live change stays
+# visible as OutOfSync until it is reverted or committed.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argocd
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-10"
+spec:
+  project: platform
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  sources:
+    - repoURL: https://argoproj.github.io/argo-helm
+      chart: argo-cd
+      targetRevision: 10.11.6
+      helm:
+        releaseName: argocd
+        valueFiles:
+          - $values/components/settings/settings.yaml
+          - $values/platform/argocd/values.yaml
+    - repoURL: git@github.com:nick-lukashik/gitops.git
+      targetRevision: master
+      ref: values
+    - repoURL: git@github.com:nick-lukashik/gitops.git
+      targetRevision: master
+      path: platform/argocd/config
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: false
+    syncOptions:
+      - ServerSideApply=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

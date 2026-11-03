@@ -1,0 +1,76 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+# Common part of every service (README "Services"): Deployment, Service,
+# IngressRoute on the root domain (real-ip; api adds body-limit), NetworkPolicy: ingress
+# from Traefik, egress to DNS only. Include it first,
+# then exactly one of components/api or components/web, then optionally
+# components/subdomain for <subdomain>.<domain>.
+#
+# The including kustomization provides, as resources (not generators, which
+# run after components):
+# - ConfigMap "service" (local config) with .data.name = <name> (= apps/<name>);
+# - optionally SealedSecret <name>-secrets;
+# and generates ConfigMap <name>-config (configMapGenerator, with the hash).
+resources:
+  - workload.yaml
+components:
+  - ../host
+patches:
+  # Secrets before everything that reads them (Argo CD waits for the wave).
+  - target:
+      group: bitnami.com
+      kind: SealedSecret
+    patch: |-
+      apiVersion: bitnami.com/v1alpha1
+      kind: SealedSecret
+      metadata:
+        name: any
+        annotations:
+          argocd.argoproj.io/sync-wave: "-1"
+replacements:
+  - source:
+      kind: ConfigMap
+      name: service
+      fieldPath: data.name
+    targets:
+      - select:
+          kind: Deployment
+        fieldPaths:
+          - metadata.name
+          - metadata.labels.[app.kubernetes.io/name]
+          - spec.selector.matchLabels.[app.kubernetes.io/name]
+          - spec.template.metadata.labels.[app.kubernetes.io/name]
+      # ghcr.io/nick-lukashik/SERVICE
+      - select:
+          kind: Deployment
+        fieldPaths:
+          - spec.template.spec.containers.[name=app].image
+        options:
+          delimiter: /
+          index: 2
+      # SERVICE-config, SERVICE-secrets
+      - select:
+          kind: Deployment
+        fieldPaths:
+          - spec.template.spec.containers.[name=app].envFrom.0.configMapRef.name
+          - spec.template.spec.containers.[name=app].envFrom.1.secretRef.name
+        options:
+          delimiter: "-"
+          index: 0
+      - select:
+          kind: Service
+        fieldPaths:
+          - metadata.name
+          - metadata.labels.[app.kubernetes.io/name]
+          - spec.selector.[app.kubernetes.io/name]
+      - select:
+          kind: IngressRoute
+        fieldPaths:
+          - metadata.name
+          - spec.routes.0.services.0.name
+      - select:
+          kind: NetworkPolicy
+        fieldPaths:
+          - metadata.name
+          - metadata.labels.[app.kubernetes.io/name]
+          - spec.podSelector.matchLabels.[app.kubernetes.io/name]

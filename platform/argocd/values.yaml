@@ -1,0 +1,163 @@
+# Argo CD 3.x. Also used by bootstrap/install.sh together with components/settings/settings.yaml.
+global:
+  logging:
+    format: json
+    level: info
+  priorityClassName: platform-critical
+
+configs:
+  cm:
+    # Until the admin console (stage E4) the UI is reached by port-forward (docs/runbook/access.md).
+    # Stage E4: https://admin.<domain>/argocd and OIDC to id (client argocd).
+    url: http://localhost:8080/argocd
+    users.anonymous.enabled: "false"
+    exec.enabled: false
+    statusbadge.enabled: false
+    # Local admin stays until OIDC works (stage E4), then admin.enabled: false.
+    admin.enabled: true
+    timeout.reconciliation: 120s
+    timeout.reconciliation.jitter: 30s
+    # Health of child Applications, so sync waves of the app-of-apps wait for them.
+    resource.customizations.health.argoproj.io_Application: |
+      hs = {}
+      hs.status = "Progressing"
+      hs.message = ""
+      if obj.status ~= nil and obj.status.health ~= nil then
+        hs.status = obj.status.health.status
+        if obj.status.health.message ~= nil then
+          hs.message = obj.status.health.message
+        end
+      end
+      return hs
+  params:
+    # TLS ends at Traefik (stage E4); until then port-forward only.
+    server.insecure: true
+    server.rootpath: /argocd
+  rbac:
+    policy.default: ""
+    policy.csv: |
+      g, admin, role:admin
+    # Stage E4: g, ops-argocd, role:admin (OIDC group).
+  secret:
+    createSecret: true
+
+dex:
+  enabled: false
+
+controller:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      memory: 1Gi
+  metrics:
+    enabled: true
+
+repoServer:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+  metrics:
+    enabled: true
+
+server:
+  resources:
+    requests:
+      cpu: 20m
+      memory: 128Mi
+    limits:
+      memory: 256Mi
+  metrics:
+    enabled: true
+
+applicationSet:
+  resources:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+    limits:
+      memory: 128Mi
+  metrics:
+    enabled: true
+
+redisSecretInit:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      memory: 64Mi
+
+redis:
+  resources:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+    limits:
+      memory: 128Mi
+
+notifications:
+  enabled: true
+  argocdUrl: http://localhost:8080/argocd
+  resources:
+    requests:
+      cpu: 10m
+      memory: 64Mi
+    limits:
+      memory: 128Mi
+  metrics:
+    enabled: true
+  # SealedSecret argocd-notifications-secret (platform/argocd/config, SECRETS.md).
+  secret:
+    create: false
+  notifiers:
+    service.telegram: |
+      token: $telegram-token
+  # Subscriptions are annotations of the AppProjects (projects/):
+  # alerts topic for every app, deploys topic for prod apps.
+  templates:
+    template.app-sync-failed: |
+      message: |
+        *Sync failed:* {{ .app.metadata.name }}
+        Revision: {{ with .app.status.operationState }}{{ with .syncResult }}{{ with .revision }}{{ trunc 7 . }}{{ else }}{{ range .revisions }}{{ trunc 7 . }} {{ end }}{{ end }}{{ end }}{{ end }}
+        Error: {{ with .app.status.operationState }}{{ index (splitList "\n" .message) 0 | trunc 300 | replace "_" "\\_" | replace "*" "\\*" | replace "`" "\\`" | replace "[" "\\[" }}{{ end }}
+        {{ .context.argocdUrl }}/applications/{{ .app.metadata.name }}
+    template.app-health-degraded: |
+      message: |
+        *Degraded:* {{ .app.metadata.name }}
+        Revision: {{ with .app.status.sync.revision }}{{ trunc 7 . }}{{ else }}{{ range .app.status.sync.revisions }}{{ trunc 7 . }} {{ end }}{{ end }}
+        Error: {{ with .app.status.health.message }}{{ index (splitList "\n" .) 0 | trunc 300 | replace "_" "\\_" | replace "*" "\\*" | replace "`" "\\`" | replace "[" "\\[" }}{{ end }}
+        {{ .context.argocdUrl }}/applications/{{ .app.metadata.name }}
+    template.app-sync-status-unknown: |
+      message: |
+        *Sync status unknown:* {{ .app.metadata.name }}
+        Revision: {{ with .app.status.sync.revision }}{{ trunc 7 . }}{{ else }}{{ range .app.status.sync.revisions }}{{ trunc 7 . }} {{ end }}{{ end }}
+        Error: {{ range .app.status.conditions }}{{ index (splitList "\n" .message) 0 | trunc 300 | replace "_" "\\_" | replace "*" "\\*" | replace "`" "\\`" | replace "[" "\\[" }} {{ end }}
+        {{ .context.argocdUrl }}/applications/{{ .app.metadata.name }}
+    template.app-deployed: |
+      message: |
+        *Deployed:* {{ .app.metadata.name }}
+        Revision: {{ with .app.status.sync.revision }}{{ trunc 7 . }}{{ else }}{{ range .app.status.sync.revisions }}{{ trunc 7 . }} {{ end }}{{ end }}
+        {{ .context.argocdUrl }}/applications/{{ .app.metadata.name }}
+  triggers:
+    trigger.on-sync-failed: |
+      - description: Application syncing has failed
+        send: [app-sync-failed]
+        when: app.status.operationState != nil and app.status.operationState.phase in ['Error', 'Failed']
+    trigger.on-health-degraded: |
+      - description: Application has degraded
+        send: [app-health-degraded]
+        when: app.status.health.status == 'Degraded'
+    trigger.on-sync-status-unknown: |
+      - description: Application status is 'Unknown'
+        send: [app-sync-status-unknown]
+        when: app.status.sync.status == 'Unknown'
+    trigger.on-deployed: |
+      - description: Application is synced and healthy, once per revision
+        oncePer: app.status.operationState?.syncResult?.revision
+        send: [app-deployed]
+        when: app.status.operationState != nil and app.status.operationState.phase in ['Succeeded'] and app.status.health.status == 'Healthy'

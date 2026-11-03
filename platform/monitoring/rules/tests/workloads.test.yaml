@@ -1,0 +1,77 @@
+rule_files:
+  - workloads.rules.yaml
+evaluation_interval: 1m
+tests:
+  - name: restarts every minute
+    interval: 1m
+    input_series:
+      - series: 'kube_pod_container_status_restarts_total{namespace="prod",pod="web-1",container="app"}'
+        values: '0x20 1+1x20'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: PodRestartingOften
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: PodRestartingOften
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              namespace: prod
+              pod: web-1
+              container: app
+            exp_annotations:
+              summary: prod/web-1 restarted more than 3 times in 15 minutes
+              description: Container app keeps restarting.
+              runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#podrestartingoften
+
+  - name: OOM kill of a restarted container and of a Job pod
+    interval: 1m
+    input_series:
+      - series: 'kube_pod_container_status_restarts_total{namespace="prod",pod="web-1",container="app"}'
+        values: '0x5 1x15'
+      - series: 'kube_pod_container_status_last_terminated_reason{namespace="prod",pod="web-1",container="app",reason="OOMKilled"}'
+        values: '_x5 1x15'
+      # Restart for another reason: no alert.
+      - series: 'kube_pod_container_status_restarts_total{namespace="prod",pod="web-2",container="app"}'
+        values: '0x5 1x15'
+      - series: 'kube_pod_container_status_last_terminated_reason{namespace="prod",pod="web-2",container="app",reason="Error"}'
+        values: '_x5 1x15'
+      - series: 'kube_pod_container_status_terminated_reason{namespace="prod",pod="web-migrate-x",container="migrate",reason="OOMKilled"}'
+        values: '_x10 1x10'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: ContainerOOMKilled
+        exp_alerts: []
+      - eval_time: 7m
+        alertname: ContainerOOMKilled
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              namespace: prod
+              pod: web-1
+              container: app
+            exp_annotations:
+              summary: prod/web-1 was OOM killed
+              description: Container app hit its memory limit.
+              runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#containeroomkilled
+      - eval_time: 12m
+        alertname: ContainerOOMKilled
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              namespace: prod
+              pod: web-1
+              container: app
+            exp_annotations:
+              summary: prod/web-1 was OOM killed
+              description: Container app hit its memory limit.
+              runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#containeroomkilled
+          - exp_labels:
+              severity: warning
+              namespace: prod
+              pod: web-migrate-x
+              container: migrate
+            exp_annotations:
+              summary: prod/web-migrate-x was OOM killed
+              description: Container migrate hit its memory limit.
+              runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#containeroomkilled

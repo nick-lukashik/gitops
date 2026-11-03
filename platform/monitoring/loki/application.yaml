@@ -1,0 +1,37 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: loki
+  namespace: argocd
+spec:
+  project: platform
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  sources:
+    - repoURL: https://grafana-community.github.io/helm-charts
+      chart: loki
+      targetRevision: 20.2.1
+      helm:
+        releaseName: loki
+        valueFiles:
+          - $values/platform/monitoring/loki/values.yaml
+    - repoURL: git@github.com:nick-lukashik/gitops.git
+      targetRevision: master
+      ref: values
+    # R2 key (SealedSecret loki-r2) and the ingress allow-list of Loki.
+    - repoURL: git@github.com:nick-lukashik/gitops.git
+      targetRevision: master
+      path: platform/monitoring/loki/config
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

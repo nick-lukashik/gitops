@@ -1,0 +1,53 @@
+# Scrape targets of components installed before the Prometheus CRDs exist
+# (bootstrap order), so their charts do not create monitors themselves.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: argocd
+  namespace: monitoring
+spec:
+  namespaceSelector:
+    matchNames: [argocd]
+  selector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values:
+          - argocd-metrics
+          - argocd-server-metrics
+          - argocd-repo-server-metrics
+  endpoints:
+    - port: http-metrics
+      interval: 30s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: cert-manager
+  namespace: monitoring
+spec:
+  namespaceSelector:
+    matchNames: [cert-manager]
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: cert-manager
+      app.kubernetes.io/component: controller
+  endpoints:
+    - port: http-metrics
+      interval: 60s
+---
+# K3s Traefik has no metrics Service; scrape the pod port "metrics" (9100).
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: traefik
+  namespace: monitoring
+spec:
+  namespaceSelector:
+    matchNames: [kube-system]
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: traefik
+  podMetricsEndpoints:
+    - port: metrics
+      interval: 30s

@@ -1,0 +1,192 @@
+# Values for the Traefik bundled with K3s (v1.36.5+k3s1: chart 40.1.x, Traefik 3.7).
+# K3s merges them over its own values; scripts/render-traefik.sh renders both in CI.
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    global:
+      checkNewVersion: false
+      sendAnonymousUsage: false
+    api:
+      dashboard: false
+    ports:
+      # Port 80 is closed: DNS-01 does not need it, Cloudflare connects on 443.
+      web: null
+      websecure:
+        forwardedHeaders:
+          # Published Cloudflare ranges: https://www.cloudflare.com/ips-v4 and
+          # https://www.cloudflare.com/ips-v6 (taken 2026-11-02). Refresh: README.
+          trustedIPs:
+            - 173.245.48.0/20
+            - 103.21.244.0/22
+            - 103.22.200.0/22
+            - 103.31.4.0/22
+            - 141.101.64.0/18
+            - 108.162.192.0/18
+            - 190.93.240.0/20
+            - 188.114.96.0/20
+            - 197.234.240.0/22
+            - 198.41.128.0/17
+            - 162.158.0.0/15
+            - 104.16.0.0/13
+            - 104.24.0.0/14
+            - 172.64.0.0/13
+            - 131.0.72.0/22
+            - 2400:cb00::/32
+            - 2606:4700::/32
+            - 2803:f800::/32
+            - 2405:b500::/32
+            - 2405:8100::/32
+            - 2a06:98c0::/29
+            - 2c0f:f248::/32
+    service:
+      spec:
+        # Keep the source address (a Cloudflare edge) instead of a node address.
+        externalTrafficPolicy: Local
+    logs:
+      general:
+        format: json
+        level: INFO
+      access:
+        enabled: true
+        format: json
+        fields:
+          general:
+            defaultmode: keep
+          headers:
+            defaultmode: drop
+            names:
+              User-Agent: keep
+              Referer: keep
+              CF-IPCountry: keep
+              # Real client address; ClientHost comes from X-Forwarded-For.
+              CF-Connecting-IP: keep
+    metrics:
+      prometheus:
+        # Per-router series for the 5xx share alert (platform/monitoring/rules).
+        addRoutersLabels: true
+    providers:
+      # Shared middlewares, referenced from IngressRoutes as <name>@file. Kubernetes
+      # CRD middlewares cannot be shared across namespaces without
+      # allowCrossNamespace, which would also let prod routes reach Services of
+      # other namespaces; it stays off.
+      file:
+        enabled: true
+        watch: true
+        content: |
+          http:
+            middlewares:
+              # X-Real-Ip and X-Forwarded-For from CF-Connecting-IP (plugin cfrealip below).
+              real-ip:
+                plugin:
+                  cfrealip: {}
+              # Service runtime contract: at most 1 MiB per request body on every
+              # public service route (components/service), 413 above it, with or
+              # without Content-Length. Bodies over 64 KiB wait in Traefik's /tmp
+              # (emptyDir), not in memory. Buffering holds the whole response too
+              # (up to 1 MiB in memory, the rest in /tmp): a streamed response
+              # (SSE, streamed HTML) reaches the client when it is complete. A
+              # route that must stream or take large uploads gets its own router
+              # without this middleware, designed for it.
+              # Not on the Argo CD and Grafana admin routes: their API calls
+              # (manifests, dashboard JSON) can be larger, Argo CD streams
+              # (watch, logs), and only operators past ops-auth reach them.
+              body-limit:
+                buffering:
+                  maxRequestBodyBytes: 1048576
+                  memRequestBodyBytes: 65536
+              # Ops gate for DevOps tools under admin.<domain> (stage E4): use
+              # ops-strip-identity@file, then ops-auth@file. No route uses them before E4.
+              ops-strip-identity:
+                headers:
+                  # An empty value removes the incoming header.
+                  customRequestHeaders:
+                    X-WEBAUTH-USER: ""
+                    X-WEBAUTH-EMAIL: ""
+                    X-WEBAUTH-NAME: ""
+                    X-WEBAUTH-ROLE: ""
+              ops-auth:
+                forwardAuth:
+                  address: http://admin-web.prod.svc.cluster.local/api/ops/auth
+                  trustForwardHeader: false
+                  authResponseHeaders:
+                    - X-WEBAUTH-USER
+                    - X-WEBAUTH-EMAIL
+                    - X-WEBAUTH-NAME
+                    - X-WEBAUTH-ROLE
+    additionalArguments:
+      # Only namespace traefik may define the default TLSStore and TLSOption.
+      - --providers.kubernetesCRD.defaultTLSResourcesNamespace=traefik
+      # Namespaces whose IngressRoutes may use <name>@file middlewares.
+      - --providers.kubernetesCRD.crossProviderNamespaces=prod,argocd,monitoring
+      - --providers.kubernetesCRD.safeNaming=true
+      # Drop X_WEBAUTH_USER-style aliases of trusted headers (ops gate).
+      - --entryPoints.websecure.http.aliasHeadersStrategy=delete
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        memory: 256Mi
+    experimental:
+      localPlugins:
+        # Used by middleware real-ip@file.
+        cfrealip:
+          type: inlinePlugin
+          moduleName: github.com/nick-lukashik/cfrealip
+          mountPath: /plugins-local/src/github.com/nick-lukashik/cfrealip
+          source:
+            go.mod: |
+              module github.com/nick-lukashik/cfrealip
+
+              go 1.23
+            .traefik.yml: |
+              displayName: Cloudflare real IP
+              type: middleware
+              import: github.com/nick-lukashik/cfrealip
+              summary: Sets X-Real-Ip and X-Forwarded-For from CF-Connecting-IP on verified Cloudflare connections.
+              testData: {}
+            cfrealip.go: |
+              // Package cfrealip passes the client address sent by Cloudflare to services.
+              package cfrealip
+
+              import (
+                  "context"
+                  "net"
+                  "net/http"
+              )
+
+              const header = "CF-Connecting-IP"
+
+              // Config has no options.
+              type Config struct{}
+
+              // CreateConfig returns the plugin configuration.
+              func CreateConfig() *Config {
+                  return &Config{}
+              }
+
+              type realIP struct {
+                  next http.Handler
+              }
+
+              // New creates the middleware.
+              func New(ctx context.Context, next http.Handler, config *Config, name string) (http.Handler, error) {
+                  return &realIP{next: next}, nil
+              }
+
+              func (m *realIP) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
+                  ip := net.ParseIP(req.Header.Get(header))
+                  // Trust the header only when the client certificate was verified
+                  // (default TLSOption: Cloudflare Authenticated Origin Pulls CA).
+                  if ip == nil || req.TLS == nil || len(req.TLS.VerifiedChains) == 0 {
+                      req.Header.Del(header)
+                  } else {
+                      req.Header.Set("X-Real-Ip", ip.String())
+                      req.Header.Set("X-Forwarded-For", ip.String())
+                  }
+                  m.next.ServeHTTP(rw, req)
+              }

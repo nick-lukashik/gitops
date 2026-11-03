@@ -1,0 +1,20 @@
+# Platform settings, the only place for these values.
+# Kustomize builds read it through components/settings + replacements.
+# Helm apps load this file as an extra values file ($values/components/settings/settings.yaml).
+# It is local config: kustomize never emits it to the cluster.
+apiVersion: nl-gitops/v1
+kind: Settings
+metadata:
+  name: settings
+  annotations:
+    config.kubernetes.io/local-config: "true"
+domain: nick-lukashik.com
+telegram:
+  # Not secret. Values come from Bitwarden item ops-telegram-topics (SECRETS.md).
+  # chatId must be non-zero or Alertmanager rejects its config; -1 is a placeholder.
+  chatId: -1
+  # message_thread_id of each forum topic; 0 posts to the General topic.
+  topics:
+    alerts: 0
+    deploys: 0
+    digests: 0

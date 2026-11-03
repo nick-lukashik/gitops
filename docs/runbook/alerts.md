@@ -1,0 +1,147 @@
+# Alerts
+
+What each alert means and what to look at first. The rules are in [`platform/monitoring/rules/`](../../platform/monitoring/rules); their `runbook_url` points to the section here. Access to Grafana, Prometheus and Alertmanager: [access.md](access.md). Commands run on the Mac with the cluster kubeconfig.
+
+`critical` alerts need action now; `warning` alerts need it today.
+
+## Node
+
+### NodeDiskUsageHigh
+
+More than 80% of a node filesystem is used (warning).
+
+```sh
+kubectl get --raw "/api/v1/nodes/$(kubectl get nodes -o name | cut -d/ -f2)/proxy/stats/summary" | jq '.node.fs'
+ssh deploy@<tailscale-name> 'sudo du -xh --max-depth=2 /var/lib | sort -h | tail -15'
+```
+
+The usual causes are container images (`sudo k3s crictl rmi --prune`), container logs and the Loki buffer (`emptyDir`, capped at 5 GiB). Data of services belongs in R2 or a database, not on the node disk.
+
+### NodeDiskUsageCritical
+
+More than 90% used (critical). The kubelet starts evicting pods at 90% (`nodefs.available<10%`), and etcd lives on the same disk. Free space first, as in [NodeDiskUsageHigh](#nodediskusagehigh), then find what grew.
+
+### NodeDiskFillingUp
+
+At the growth rate of the last hour the disk reaches the eviction threshold within 6 hours (critical). Find what is writing: the steps of [NodeDiskUsageHigh](#nodediskusagehigh), and `kubectl top pods -A` for a pod writing logs in a loop.
+
+### NodeMemoryLow
+
+Less than 10% of the memory has been available for 10 minutes (critical).
+
+```sh
+kubectl top pods -A --sort-by=memory | head -15
+```
+
+A pod near its limit is the usual cause; memory limits are in `components/service/workload.yaml` and the platform values. The budget per component: [resources.md](../resources.md).
+
+### NodeRebootRequired
+
+Updates that need a reboot (usually a kernel) have waited for 24 hours (warning). Unattended upgrades never reboot by themselves. Reboot at a quiet hour: `ssh deploy@<tailscale-name> sudo reboot`. Everything comes back on its own; check `kubectl get nodes` and the site afterwards.
+
+## Platform
+
+### CertificateExpiringSoon
+
+A certificate expires in less than 14 days (warning). cert-manager renews 30 days ahead, so renewal has been failing for two weeks.
+
+```sh
+kubectl get certificate -A
+kubectl -n traefik describe certificate <name>
+kubectl -n cert-manager logs deploy/cert-manager --tail=100 | grep -i error
+```
+
+Common causes: the `cf-dns01-token` was revoked or lost a zone, or Let's Encrypt rate limits.
+
+### TraefikHigh5xxRate
+
+More than 5% of the responses of one router are 5xx (warning). The router name is `<namespace>-<service>@kubernetescrd`.
+
+```sh
+kubectl -n prod get pods -l app.kubernetes.io/name=<service>
+kubectl -n prod logs deploy/<service> --tail=100
+```
+
+A 502 or 503 with no logs in the pod means the pod is not ready or not running; a 500 has its log line in the service. A recent deploy is the first suspect: [roll back](deploy.md#roll-a-service-back).
+
+### ArgoCDAppOutOfSync
+
+The live state of an application has differed from git for 15 minutes (warning): a failed sync, or a manual change in the cluster.
+
+```sh
+kubectl -n argocd get application <name> -o jsonpath='{.status.operationState.message}{"\n"}'
+```
+
+A manual change is reverted by self-heal; a failed sync shows its reason in the message above.
+
+### ArgoCDAppDegraded
+
+An application has been Degraded for 15 minutes (critical): a resource is unhealthy, often a Deployment whose new pods never became ready (image pull, crash, failed probe) or an api migrate Job that failed ([deploy.md](deploy.md#the-migration-failed)).
+
+```sh
+kubectl -n argocd get application <name> -o json | jq '.status.resources[] | select(.health.status != "Healthy")'
+kubectl -n prod get pods
+```
+
+### LokiDiscardingSamples
+
+Loki rejected log lines in the last 10 minutes (warning), by `reason`: `rate_limited` or `stream_limit` (a pod logging in a loop), `greater_than_max_sample_age` (old lines after an outage), `line_too_long`. Find the noisy pod with `kubectl top pods -A` and its logs; the limits are in `platform/monitoring/loki/values.yaml`.
+
+## Workloads
+
+### PodRestartingOften
+
+A container restarted more than 3 times in 15 minutes (warning).
+
+```sh
+kubectl -n <namespace> describe pod <pod> | sed -n '/Last State/,/Ready/p'
+kubectl -n <namespace> logs <pod> -c <container> --previous --tail=100
+```
+
+A failed liveness probe, a crash on start (bad config: the service validates its env and stops) or a dependency it cannot start without.
+
+### ContainerOOMKilled
+
+A container was killed at its memory limit (warning). Check `kubectl top pods` and the memory graph in Grafana: a leak grows steadily, a too-low limit is hit under normal load. Raise the limit in the service's `patches` only after the cause is clear.
+
+## Services
+
+### ServiceDatabaseErrors
+
+Requests of a service end with 503 because Postgres is over a time budget, locked or unreachable (warning). The metric `http_server_database_failures_total{reason}` tells which: `lock_timeout` (a long transaction or a migration holds a lock), `statement_timeout` (a slow query), `pool_timeout` (the pool is exhausted), `unavailable` (Postgres is down).
+
+### ServiceBrokerDown
+
+A service has no RabbitMQ connection (warning). Writes still succeed and their events wait in the outbox; it reconnects by itself. Check the broker pod and the service log (`RabbitMQ connection lost`). If it lasts, [OutboxEventsStuck](#outboxeventsstuck) follows.
+
+### ServiceConsumerDown
+
+A consumer keeps failing to re-subscribe to its queue (critical): events of that queue are not processed. The service log says why: usually `PRECONDITION_FAILED` (the queue exists with other arguments; it has to be deleted and is then declared again) or missing permissions.
+
+### OutboxEventsStuck
+
+The oldest unpublished event is older than 5 minutes (critical). Events are committed but not reaching RabbitMQ: the broker is down ([ServiceBrokerDown](#servicebrokerdown)), or every publish fails (`outbox_publish_failures_total{reason}`). The `last_error` column of the `outbox` table holds the reason per event.
+
+### OutboxEventsUnroutable
+
+RabbitMQ returned published events because no queue is bound to their routing key (critical). Nothing is lost: they stay in the outbox and are retried. A consumer queue is missing or its binding changed; deploying the consumer (it declares its queues) fixes it.
+
+### ServiceEventsDeadLettered
+
+Events of a queue failed every retry, or were invalid, and moved to `<queue>.dlq` (warning). They wait there; nothing processes them.
+
+1. The consumer's log has the error per event: `Event handling failed` with `target` `<queue>.dlq`, or `Invalid message, moving to DLQ`.
+2. Fix the cause and deploy.
+3. Move the dead letters back, in the service's pod:
+
+   ```sh
+   kubectl -n prod exec deploy/<service> -- node dist/messaging/replay-dlq.js <queue> --limit 100
+   ```
+
+### ServiceRedisDown
+
+A service has no Redis connection (warning). Its cache is bypassed (reads go to Postgres) and its rate limiter lets requests through. It reconnects by itself; check the Redis pod.
+
+### RateLimitFailingOpen
+
+The rate limiter could not reach Redis and let requests through (warning). It follows [ServiceRedisDown](#serviceredisdown) or a Redis over its 500 ms budget; fix Redis.

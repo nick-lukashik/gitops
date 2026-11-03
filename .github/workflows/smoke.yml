@@ -1,0 +1,97 @@
+# Post-deploy smoke check, until Argo CD reports deployments to GitHub:
+# merging a deploy PR (or a rollback) is a push to master that changes
+# apps/<service>/prod/kustomization.yaml. For every such service this runs
+# smoke.yml@v1 of nick-lukashik/.github, which polls https://<host>/health/ready
+# until header x-app-version equals the deployed SHA (Argo CD polls git every
+# 3 minutes and then syncs; smoke waits up to 10 minutes), then checks the
+# pages and reports to Telegram "Deploys". The URL is the host of the rendered
+# IngressRoute (annotation nl-gitops/host), the version and repository come
+# from the deploy annotations. Source: .github docs/examples/gitops-smoke.yml.
+name: smoke
+
+on:
+  push:
+    branches: [master]
+    paths: ["apps/*/prod/kustomization.yaml"]
+
+permissions: {}
+
+jobs:
+  targets:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      list: ${{ steps.list.outputs.list }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - id: list
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          # The pushed range: one squash commit normally, more after an owner
+          # push that bypasses the ruleset.
+          base=HEAD^
+          if [[ $BEFORE =~ ^[0-9a-f]{40}$ && ! $BEFORE =~ ^0+$ ]] &&
+            git fetch --no-tags --depth=1 origin "$BEFORE" 2>/dev/null; then
+            base=$BEFORE
+          fi
+          # One JSON object per changed service; templates (apps/_*) and apps
+          # without a deploy annotation (third-party) are skipped. Annotation keys
+          # are matched by suffix: the domain is written only in components/settings.
+          git diff --name-only "$base" HEAD -- 'apps/*/prod/kustomization.yaml' |
+            while read -r f; do
+              [ -f "$f" ] || continue
+              dir=$(dirname "$f")
+              service=$(basename "$(dirname "$dir")")
+              case $service in _*) continue ;; esac
+              source_sha=$(yq '((.commonAnnotations // {}) | to_entries | map(select(.key | test("/source-sha$"))) | .[0].value) // ""' "$f")
+              [ -n "$source_sha" ] || continue
+              host=$(kustomize build "$dir" |
+                yq -N 'select(.kind == "IngressRoute") | .metadata.annotations["nl-gitops/host"] // ""')
+              if [[ ! $host =~ ^[a-z0-9.-]+$ ]]; then
+                echo "::warning::$dir: no single IngressRoute with nl-gitops/host, skipped"
+                continue
+              fi
+              paths=$(kustomize build "$dir" |
+                yq -N 'select(.kind == "IngressRoute") | .metadata.annotations["nl-gitops/smoke-paths"] // ""')
+              if [ -z "$paths" ]; then
+                echo "::error::$dir: nl-gitops/smoke-paths is required"
+                exit 1
+              fi
+              SERVICE=$service URL="https://$host" CHECK_PATHS="$paths" yq -o=json -I=0 '{
+                "service": strenv(SERVICE),
+                "url": strenv(URL),
+                "check-paths": strenv(CHECK_PATHS),
+                "version": ((.commonAnnotations // {}) | to_entries | map(select(.key | test("/source-sha$"))) | .[0].value // ""),
+                "repository": ((.commonAnnotations // {}) | to_entries | map(select(.key | test("/source-repo$"))) | .[0].value // "")
+              }' "$f"
+            done | jq -sc '[.[] | select(.version != "" and .repository != "")]' > "$RUNNER_TEMP/list.json"
+          echo "list=$(cat "$RUNNER_TEMP/list.json")" >> "$GITHUB_OUTPUT"
+          cat "$RUNNER_TEMP/list.json"
+
+  smoke:
+    needs: targets
+    if: needs.targets.outputs.list != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.targets.outputs.list) }}
+    uses: nick-lukashik/.github/.github/workflows/smoke.yml@v1
+    permissions:
+      contents: read
+      packages: read
+    with:
+      service: ${{ matrix.target.service }}
+      repository: ${{ matrix.target.repository }}
+      url: ${{ matrix.target.url }}
+      version: ${{ matrix.target.version }}
+      check-paths: ${{ matrix.target.check-paths }}
+      # gitops has no access to the service packages; the HTTP checks remain.
+      pnpm-smoke: false
+    secrets:
+      OPS_TELEGRAM_TOKEN: ${{ secrets.OPS_TELEGRAM_TOKEN }}

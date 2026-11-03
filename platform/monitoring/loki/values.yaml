@@ -1,0 +1,124 @@
+# Loki 3.7 (grafana-community chart), single binary. Chunks and index live in
+# Cloudflare R2 (bucket nl-loki, Terraform in infra), so logs never fill the
+# node disk: local-path does not enforce a PVC size, and retention bounds age,
+# not volume. The pod keeps only the WAL, the TSDB index being built and the
+# index cache, on an emptyDir whose sizeLimit the kubelet enforces.
+deploymentMode: Monolithic
+
+loki:
+  auth_enabled: false
+  commonConfig:
+    replication_factor: 1
+    path_prefix: /var/loki
+  storage:
+    type: s3
+    bucketNames:
+      chunks: nl-loki
+      # Required by the chart; there is no ruler and no admin API.
+      ruler: nl-loki
+      admin: nl-loki
+    # Endpoint (it carries the account ID) and key from SealedSecret loki-r2
+    # (SECRETS.md), expanded by Loki at start (-config.expand-env=true).
+    s3:
+      endpoint: ${S3_ENDPOINT}
+      region: auto
+      accessKeyId: ${S3_ACCESS_KEY_ID}
+      secretAccessKey: ${S3_SECRET_ACCESS_KEY}
+      s3ForcePathStyle: true
+      insecure: false
+  schemaConfig:
+    configs:
+      - from: "2026-11-01"
+        store: tsdb
+        object_store: s3
+        schema: v13
+        index:
+          prefix: index_
+          period: 24h
+  server:
+    log_format: json
+  ingester:
+    wal:
+      # A restart (rollout, upgrade) flushes the chunks to R2 first, so losing
+      # the emptyDir loses nothing. Only a crash or an eviction loses the
+      # chunks not flushed yet (at most max_chunk_age, 2 h).
+      flush_on_shutdown: true
+      # Below the memory limit: a WAL replay flushes instead of OOM-looping.
+      replay_memory_ceiling: 512MB
+  limits_config:
+    # 30 days. R2 lifecycle of nl-loki removes leftovers after 31 days.
+    retention_period: 720h
+    max_query_lookback: 720h
+    # A log storm is rejected (429 to Alloy, LokiDiscardingSamples alert), not
+    # stored: these limits bound memory, the WAL and the R2 bill.
+    ingestion_rate_mb: 8
+    ingestion_burst_size_mb: 16
+    per_stream_rate_limit: 4MB
+    per_stream_rate_limit_burst: 8MB
+    max_global_streams_per_user: 5000
+    max_line_size: 256KB
+    reject_old_samples: true
+    reject_old_samples_max_age: 168h
+    allow_structured_metadata: true
+    volume_enabled: true
+  compactor:
+    working_directory: /var/loki/compactor
+    retention_enabled: true
+    delete_request_store: s3
+    compaction_interval: 10m
+    retention_delete_delay: 2h
+  pattern_ingester:
+    enabled: false
+  analytics:
+    reporting_enabled: false
+
+singleBinary:
+  replicas: 1
+  # No ruler, so no rules sidecar.
+  sidecar: false
+  priorityClassName: platform-critical
+  # One node: drop the default anti-affinity rule.
+  affinity: {}
+  extraEnvFrom:
+    - secretRef:
+        name: loki-r2
+  # Time for flush_on_shutdown before SIGKILL.
+  terminationGracePeriodSeconds: 120
+  # /var/loki: WAL, TSDB index being built, index cache, compactor work dir.
+  # Exceeding sizeLimit evicts the pod (WAL lost, chunks in R2 kept) instead of
+  # filling the disk that etcd shares.
+  persistence:
+    enabled: false
+    dataVolumeParameters:
+      emptyDir:
+        sizeLimit: 5Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      memory: 1Gi
+
+# Simple scalable / distributed targets are off in monolithic mode.
+read:
+  replicas: 0
+write:
+  replicas: 0
+backend:
+  replicas: 0
+
+# Grafana and Alloy talk to the loki Service directly.
+gateway:
+  enabled: false
+chunksCache:
+  enabled: false
+resultsCache:
+  enabled: false
+lokiCanary:
+  enabled: false
+test:
+  enabled: false
+
+monitoring:
+  serviceMonitor:
+    enabled: true

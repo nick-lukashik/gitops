@@ -1,0 +1,35 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+# web kind (Next.js), after components/service: writable /app/.next/cache,
+# pod label kind=web and the api-client pod label. That label is both
+# directions of web -> api: the NetworkPolicy of every api accepts it on http,
+# and NetworkPolicy api-clients (platform/policies/prod.yaml) gives its pods
+# egress to api pods on http. No other egress than DNS (components/service).
+# No migrations and no metrics endpoint: HTTP metrics come from Traefik.
+# Resources: the defaults of components/service.
+patches:
+  - target:
+      kind: Deployment
+      labelSelector: app.kubernetes.io/component=server
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: any
+      spec:
+        template:
+          metadata:
+            labels:
+              nick-lukashik.com/kind: web
+              nick-lukashik.com/api-client: "true"
+          spec:
+            containers:
+              - name: app
+                volumeMounts:
+                  - name: next-cache
+                    mountPath: /app/.next/cache
+            volumes:
+              # Image optimizer and fetch cache. Going over sizeLimit evicts the pod.
+              - name: next-cache
+                emptyDir:
+                  sizeLimit: 512Mi

@@ -1,0 +1,127 @@
+# Resources the api kind adds to components/service.
+#
+# Migrations before the rollout: same image, config and secrets as the app.
+# An Argo CD Sync hook in wave 0, not PreSync: PreSync runs before the
+# ConfigMap <name>-config and the SealedSecret <name>-secrets of the same sync
+# exist (first sync of a service, and every config change, since the
+# ConfigMap name carries a content hash). Wave order: secrets (-1), config and
+# this Job (0), Deployment (1). A failed Job fails the sync; the old pods keep
+# running (docs/runbook/deploy.md).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: SERVICE-migrate
+  labels:
+    app.kubernetes.io/name: SERVICE
+    app.kubernetes.io/component: migrate
+    app.kubernetes.io/part-of: nick-lukashik
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/sync-wave: "0"
+    # Keeps the last Job and its logs until the next sync.
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 1
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: SERVICE
+        app.kubernetes.io/component: migrate
+        app.kubernetes.io/part-of: nick-lukashik
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      priorityClassName: service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          image: ghcr.io/nick-lukashik/SERVICE
+          command: ["node", "dist/db/migrate.js"]
+          # Required ConfigMap: the pod waits for it instead of migrating without config.
+          envFrom:
+            - configMapRef:
+                name: SERVICE-config
+            - secretRef:
+                name: SERVICE-secrets
+                optional: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+---
+# Scrapes the separate metrics listener (port metrics, never the public http).
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: SERVICE
+  labels:
+    app.kubernetes.io/name: SERVICE
+    app.kubernetes.io/part-of: nick-lukashik
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: SERVICE
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+---
+# The migrate Job: no ingress; egress to DNS and the data stores only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: SERVICE-migrate
+  labels:
+    app.kubernetes.io/name: SERVICE
+    app.kubernetes.io/component: migrate
+    app.kubernetes.io/part-of: nick-lukashik
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: SERVICE
+      app.kubernetes.io/component: migrate
+  policyTypes:
+    - Ingress
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              nick-lukashik.com/data: "true"

@@ -1,0 +1,164 @@
+rule_files:
+  - services.rules.yaml
+evaluation_interval: 1m
+tests:
+  - name: database errors for 5 minutes
+    interval: 1m
+    input_series:
+      - series: 'http_server_database_failures_total{namespace="prod",service="notes-api",pod="notes-api-1"}'
+        values: '0x5 1+1x20'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: ServiceDatabaseErrors
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: ServiceDatabaseErrors
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              namespace: prod
+              service: notes-api
+            exp_annotations:
+              summary: prod/notes-api fails requests on the database
+              description: Requests end with 503 on Postgres timeouts, lock waits or a busy pool.
+              runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#servicedatabaseerrors
+
+  - name: broker down, then a consumer stays down
+    interval: 1m
+    input_series:
+      - series: 'messaging_broker_up{namespace="prod",service="notes-api",pod="notes-api-1"}'
+        values: '1x5 0x10'
+      - series: 'messaging_consumer_up{namespace="prod",service="notes-api",pod="notes-api-1",queue="notes-api.note-created"}'
+        values: '1x5 0x10'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: ServiceBrokerDown
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: ServiceBrokerDown
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              namespace: prod
+              service: notes-api
+            exp_annotations:
+              summary: prod/notes-api has no RabbitMQ connection
+              description: Writes still succeed; events wait in the outbox until the broker is back.
+              runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#servicebrokerdown
+      - eval_time: 12m
+        alertname: ServiceConsumerDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              namespace: prod
+              service: notes-api
+              queue: notes-api.note-created
+            exp_annotations:
+              summary: prod/notes-api does not consume notes-api.note-created
+              description: The consumer keeps failing to re-subscribe; events for this queue are not processed.
+              runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#serviceconsumerdown
+
+  - name: outbox backlog older than 5 minutes
+    interval: 1m
+    input_series:
+      - series: 'outbox_oldest_pending_seconds{namespace="prod",service="notes-api",pod="notes-api-1"}'
+        values: '0x3 60+60x15'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: OutboxEventsStuck
+        exp_alerts: []
+      - eval_time: 14m
+        alertname: OutboxEventsStuck
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              namespace: prod
+              service: notes-api
+            exp_annotations:
+              summary: prod/notes-api has events unpublished for over 5 minutes
+              description: The oldest pending outbox event is 11m 0s old.
+              runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#outboxeventsstuck
+
+  - name: unroutable events alert at once; other failures do not
+    interval: 1m
+    input_series:
+      - series: 'outbox_publish_failures_total{namespace="prod",service="notes-api",pod="notes-api-1",reason="unavailable"}'
+        values: '0+1x10'
+      - series: 'outbox_publish_failures_total{namespace="prod",service="notes-api",pod="notes-api-1",reason="unroutable"}'
+        values: '0x5 1x5'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: OutboxEventsUnroutable
+        exp_alerts: []
+      - eval_time: 7m
+        alertname: OutboxEventsUnroutable
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              namespace: prod
+              service: notes-api
+            exp_annotations:
+              summary: prod/notes-api publishes events no queue receives
+              description: RabbitMQ returned published events (no bound queue); they stay in the outbox and are retried.
+              runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#outboxeventsunroutable
+
+  - name: a dead-lettered event alerts at once; processed events do not
+    interval: 1m
+    input_series:
+      - series: 'messaging_events_consumed_total{namespace="prod",service="notes-api",pod="notes-api-1",queue="notes-api.activity",outcome="processed"}'
+        values: '0+5x10'
+      - series: 'messaging_events_consumed_total{namespace="prod",service="notes-api",pod="notes-api-1",queue="notes-api.activity",outcome="dead_lettered"}'
+        values: '0x5 1x5'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: ServiceEventsDeadLettered
+        exp_alerts: []
+      - eval_time: 7m
+        alertname: ServiceEventsDeadLettered
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              namespace: prod
+              service: notes-api
+              queue: notes-api.activity
+            exp_annotations:
+              summary: prod/notes-api dead-lettered events of notes-api.activity
+              description: Events failed every retry or were invalid; they wait in the dead-letter queue for a fix and a replay.
+              runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#serviceeventsdeadlettered
+
+  - name: Redis down and the rate limiter open
+    interval: 1m
+    input_series:
+      - series: 'redis_up{namespace="prod",service="notes-api",pod="notes-api-1"}'
+        values: '1x5 0x10'
+      - series: 'rate_limit_fail_open_total{namespace="prod",service="notes-api",pod="notes-api-1"}'
+        values: '0x5 1+1x10'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: RateLimitFailingOpen
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: RateLimitFailingOpen
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              namespace: prod
+              service: notes-api
+            exp_annotations:
+              summary: prod/notes-api lets requests through without a rate limit
+              description: The rate limiter could not reach Redis and failed open.
+              runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#ratelimitfailingopen
+      - eval_time: 8m
+        alertname: ServiceRedisDown
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: ServiceRedisDown
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              namespace: prod
+              service: notes-api
+            exp_annotations:
+              summary: prod/notes-api has no Redis connection
+              description: The cache is bypassed and the rate limiter is open.
+              runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#serviceredisdown

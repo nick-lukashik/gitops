@@ -1,0 +1,58 @@
+# Every apps/<service>/prod becomes Application <service>-prod in project prod.
+# apps/_* (templates) are excluded.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: apps-prod
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - git:
+        repoURL: git@github.com:nick-lukashik/gitops.git
+        revision: master
+        directories:
+          - path: apps/*/prod
+          - path: apps/_*/prod
+            exclude: true
+  # Deleting the ApplicationSet itself keeps the workloads running.
+  syncPolicy:
+    preserveResourcesOnDeletion: true
+  # Lets docs/runbook/deploy.md pause auto-sync of one app without the
+  # ApplicationSet reverting it.
+  ignoreApplicationDifferences:
+    - jsonPointers:
+        - /spec/syncPolicy/automated/enabled
+  template:
+    metadata:
+      name: '{{ index .path.segments 1 }}-prod'
+      labels:
+        nl-gitops/service: '{{ index .path.segments 1 }}'
+      # Removing apps/<service> deletes the app and prunes its resources.
+      finalizers:
+        - resources-finalizer.argocd.argoproj.io
+    spec:
+      project: prod
+      source:
+        repoURL: git@github.com:nick-lukashik/gitops.git
+        targetRevision: master
+        path: '{{ .path.path }}'
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: prod
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - ServerSideApply=true
+          # Prune after every wave is healthy: the old <service>-config-<hash>
+          # stays until the new pods run (a restarting old pod still finds it).
+          - PruneLast=true
+        retry:
+          limit: 3
+          backoff:
+            duration: 10s
+            factor: 2
+            maxDuration: 3m

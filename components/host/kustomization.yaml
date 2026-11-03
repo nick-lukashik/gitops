@@ -1,0 +1,28 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+# Puts the root domain into the single IngressRoute of the build:
+# Settings.domain -> annotation nl-gitops/host -> first Host(`...`) of routes[0].
+# Add components/subdomain after this one to prefix a subdomain.
+components:
+  - ../settings
+replacements:
+  - source:
+      kind: Settings
+      name: settings
+      fieldPath: domain
+    targets:
+      - select:
+          kind: IngressRoute
+        fieldPaths:
+          - metadata.annotations.nl-gitops/host
+  - source:
+      kind: IngressRoute
+      fieldPath: metadata.annotations.nl-gitops/host
+    targets:
+      - select:
+          kind: IngressRoute
+        fieldPaths:
+          - spec.routes.0.match
+        options:
+          delimiter: "`"
+          index: 1

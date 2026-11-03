@@ -1,0 +1,40 @@
+# Loki has no auth (single tenant), so the network decides who reads and
+# writes logs. Namespace monitoring denies all other ingress
+# (platform/policies/monitoring.yaml); Prometheus scrapes it through policy
+# from-prometheus (kube-prometheus-stack/config). Pods of prod cannot reach it
+# at all: their egress is denied (platform/policies/prod.yaml).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: loki
+  namespace: monitoring
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: loki
+      app.kubernetes.io/component: single-binary
+  policyTypes:
+    - Ingress
+  ingress:
+    # Alloy pushes the logs.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring-node
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: alloy
+      ports:
+        - port: 3100
+    # Grafana queries them.
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: grafana
+      ports:
+        - port: 3100
+    # Loki to itself through its Services (memberlist, query frontend).
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: loki

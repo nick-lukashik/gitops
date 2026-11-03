@@ -1,0 +1,190 @@
+# kube-prometheus-stack 92.x on single-node K3s. Loaded after components/settings/settings.yaml,
+# so .Values.telegram is available to the Alertmanager config below (tplConfig).
+
+crds:
+  enabled: true
+
+# K3s runs scheduler, controller-manager, proxy and etcd inside one process with
+# metrics on localhost only: no scrape targets and no rules for them.
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false
+kubeEtcd:
+  enabled: false
+defaultRules:
+  rules:
+    etcd: false
+    kubeControllerManager: false
+    kubeProxy: false
+    kubeSchedulerAlerting: false
+    kubeSchedulerRecording: false
+    windows: false
+windowsMonitoring:
+  enabled: false
+
+# Grafana is a separate app (platform/monitoring/grafana).
+grafana:
+  enabled: false
+
+alertmanager:
+  tplConfig: true
+  # Helm renders this string first: {{ .Values.* }} is Helm, {{ "{{" }} is left for Alertmanager.
+  stringConfig: |
+    global:
+      resolve_timeout: 5m
+    templates:
+      - /etc/alertmanager/config/*.tmpl
+    route:
+      receiver: telegram
+      group_by: [alertname, namespace]
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 4h
+      routes:
+        # Dead man's switch: Healthchecks hc-watchdog expects a ping every 5 minutes.
+        - receiver: healthchecks
+          matchers: ['alertname = "Watchdog"']
+          group_wait: 0s
+          group_interval: 1m
+          repeat_interval: 4m
+        - receiver: "null"
+          matchers: ['alertname = "InfoInhibitor"']
+    inhibit_rules:
+      - source_matchers: ['severity = "critical"']
+        target_matchers: ['severity = "warning"']
+        equal: [alertname, namespace]
+      - source_matchers: ['alertname = "InfoInhibitor"']
+        target_matchers: ['severity = "info"']
+        equal: [namespace]
+    receivers:
+      - name: "null"
+      - name: telegram
+        telegram_configs:
+          - bot_token_file: /etc/alertmanager/secrets/ops-telegram/token
+            chat_id: {{ .Values.telegram.chatId }}
+            message_thread_id: {{ .Values.telegram.topics.alerts }}
+            parse_mode: ""
+            send_resolved: true
+            message: '{{ "{{" }} template "nl.telegram.message" . {{ "}}" }}'
+      - name: healthchecks
+        webhook_configs:
+          - url_file: /etc/alertmanager/secrets/hc-watchdog/url
+            send_resolved: false
+  templateFiles:
+    telegram.tmpl: |-
+      {{ define "nl.telegram.message" -}}
+      {{ range .Alerts -}}
+      {{ if eq .Status "firing" }}[{{ or .Labels.severity "none" | toUpper }}]{{ else }}[RESOLVED]{{ end }} {{ .Labels.alertname }}
+      {{ with .Annotations.summary }}{{ . }}
+      {{ end }}{{ with .Annotations.description }}{{ . }}
+      {{ end }}ns: {{ or .Labels.namespace "-" }}{{ with .Labels.pod }}, pod: {{ . }}{{ end }}
+      {{ with .Annotations.runbook_url }}runbook: {{ . }}
+      {{ end }}
+      {{ end -}}
+      {{- end }}
+  alertmanagerSpec:
+    logFormat: json
+    priorityClassName: platform-critical
+    # Mounted at /etc/alertmanager/secrets/<name>/ (SealedSecrets in ./config).
+    secrets:
+      - ops-telegram
+      - hc-watchdog
+    retention: 120h
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: local-path
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 1Gi
+    resources:
+      requests:
+        cpu: 10m
+        memory: 64Mi
+      limits:
+        memory: 128Mi
+
+prometheus:
+  prometheusSpec:
+    logFormat: json
+    priorityClassName: platform-critical
+    retention: 7d
+    # Below the 15 GiB volume so the TSDB never fills it.
+    retentionSize: 13GB
+    # Select ServiceMonitors, PodMonitors, Probes and rules from all namespaces.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    probeSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    scrapeConfigSelectorNilUsesHelmValues: false
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: local-path
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 15Gi
+    resources:
+      requests:
+        cpu: 200m
+        memory: 1Gi
+      limits:
+        memory: 2Gi
+
+prometheusOperator:
+  logFormat: json
+  priorityClassName: platform-critical
+  # No admission webhook (and no certgen hook Jobs): rules are checked by promtool in CI.
+  admissionWebhooks:
+    enabled: false
+  tls:
+    enabled: false
+  resources:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+    limits:
+      memory: 192Mi
+  prometheusConfigReloader:
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        memory: 64Mi
+
+kube-state-metrics:
+  priorityClassName: platform-critical
+  resources:
+    requests:
+      cpu: 10m
+      memory: 64Mi
+    limits:
+      memory: 128Mi
+
+prometheus-node-exporter:
+  # hostNetwork/hostPID/hostPath: lives in the privileged namespace.
+  namespaceOverride: monitoring-node
+  priorityClassName: platform-critical
+  extraArgs:
+    - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run/containerd/.+|var/lib/docker/.+|var/lib/kubelet/.+)($|/)
+    - --collector.filesystem.fs-types-exclude=^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs|erofs)$
+    # node_reboot_required from infra (nl-reboot-required.timer).
+    - --collector.textfile.directory=/host/textfile
+  extraHostVolumeMounts:
+    - name: textfile
+      hostPath: /var/lib/node-exporter/textfile
+      type: DirectoryOrCreate
+      mountPath: /host/textfile
+      readOnly: true
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      memory: 64Mi

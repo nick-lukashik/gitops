@@ -1,0 +1,38 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - helmchartconfig.yaml
+  - tls.yaml
+components:
+  - ../../components/settings
+# Public CA of Cloudflare Authenticated Origin Pulls (global, Cloudflare-provided
+# client certificate). Source:
+# https://developers.cloudflare.com/ssl/static/authenticated_origin_pull_ca.pem
+# CN=origin-pull.cloudflare.net, valid until 2029-11-01.
+secretGenerator:
+  - name: cloudflare-origin-pull-ca
+    namespace: traefik
+    type: Opaque
+    files:
+      - ca.crt=cloudflare-origin-pull-ca.pem
+    options:
+      disableNameSuffixHash: true
+replacements:
+  - source:
+      kind: Settings
+      name: settings
+      fieldPath: domain
+    targets:
+      - select:
+          kind: Certificate
+          name: wildcard-nick-lukashik-com
+        fieldPaths:
+          - spec.dnsNames.0
+      - select:
+          kind: Certificate
+          name: wildcard-nick-lukashik-com
+        fieldPaths:
+          - spec.dnsNames.1
+        options:
+          delimiter: "*."
+          index: 1

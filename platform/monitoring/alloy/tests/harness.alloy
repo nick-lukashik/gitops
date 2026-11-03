@@ -1,0 +1,35 @@
+// Test inputs for the loki.process blocks of ../config/config.alloy (scripts/check-alloy.sh).
+// The script appends the processing blocks and sends their output to loki.echo.
+loki.echo "out" { }
+
+local.file_match "app" {
+  path_targets = [{
+    "__path__"  = "/tests/app.log",
+    "namespace" = "prod",
+    "app"       = "web",
+    "container" = "app",
+    "pod"       = "web-1",
+  }]
+}
+
+loki.source.file "app" {
+  targets       = local.file_match.app.targets
+  forward_to    = [loki.process.pods.receiver]
+  tail_from_end = false
+}
+
+local.file_match "redis" {
+  path_targets = [{
+    "__path__"  = "/tests/redis.log",
+    "namespace" = "prod",
+    "app"       = "redis",
+    "container" = "redis",
+    "pod"       = "redis-0",
+  }]
+}
+
+loki.source.file "redis" {
+  targets       = local.file_match.redis.targets
+  forward_to    = [loki.process.pods.receiver]
+  tail_from_end = false
+}

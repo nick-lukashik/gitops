@@ -1,0 +1,62 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - default.yaml
+  - platform.yaml
+  - prod.yaml
+components:
+  - ../components/settings
+# Notification recipients "<chat id>|<topic id>" from Settings.telegram.
+replacements:
+  - source:
+      kind: Settings
+      name: settings
+      fieldPath: telegram.chatId
+    targets:
+      - select:
+          kind: AppProject
+          name: platform
+        fieldPaths: &alerting
+          - metadata.annotations.[notifications.argoproj.io/subscribe.on-sync-failed.telegram]
+          - metadata.annotations.[notifications.argoproj.io/subscribe.on-health-degraded.telegram]
+          - metadata.annotations.[notifications.argoproj.io/subscribe.on-sync-status-unknown.telegram]
+        options: &chat
+          delimiter: "|"
+          index: 0
+      - select:
+          kind: AppProject
+          name: prod
+        fieldPaths:
+          - metadata.annotations.[notifications.argoproj.io/subscribe.on-sync-failed.telegram]
+          - metadata.annotations.[notifications.argoproj.io/subscribe.on-health-degraded.telegram]
+          - metadata.annotations.[notifications.argoproj.io/subscribe.on-sync-status-unknown.telegram]
+          - metadata.annotations.[notifications.argoproj.io/subscribe.on-deployed.telegram]
+        options: *chat
+  - source:
+      kind: Settings
+      name: settings
+      fieldPath: telegram.topics.alerts
+    targets:
+      - select:
+          kind: AppProject
+          name: platform
+        fieldPaths: *alerting
+        options: &topic
+          delimiter: "|"
+          index: 1
+      - select:
+          kind: AppProject
+          name: prod
+        fieldPaths: *alerting
+        options: *topic
+  - source:
+      kind: Settings
+      name: settings
+      fieldPath: telegram.topics.deploys
+    targets:
+      - select:
+          kind: AppProject
+          name: prod
+        fieldPaths:
+          - metadata.annotations.[notifications.argoproj.io/subscribe.on-deployed.telegram]
+        options: *topic

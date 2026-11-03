@@ -1,0 +1,26 @@
+# Applied once by bootstrap/install.sh. Syncs platform/ (app-of-apps).
+# No self-heal: a manual change to an Application stays visible as OutOfSync.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root
+  namespace: argocd
+spec:
+  project: platform
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  source:
+    repoURL: git@github.com:nick-lukashik/gitops.git
+    targetRevision: master
+    path: platform
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: false
+    retry:
+      limit: 3
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

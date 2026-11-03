@@ -1,0 +1,27 @@
+# Also applied by bootstrap/install.sh before Argo CD and Sealed Secrets,
+# whose pods use platform-critical.
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: platform-critical
+value: 100000
+globalDefault: false
+description: Argo CD, Sealed Secrets, cert-manager, monitoring; later CNPG, RabbitMQ.
+---
+# Global default: a pod without priorityClassName (prod included) gets it.
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: service
+value: 1000
+globalDefault: true
+description: Services in prod.
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: batch
+value: 100
+globalDefault: false
+preemptionPolicy: Never
+description: Drills and one-off Jobs; never preempts other pods.

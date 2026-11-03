@@ -1,0 +1,49 @@
+crds:
+  enabled: true
+  keep: true
+global:
+  priorityClassName: platform-critical
+  leaderElection:
+    namespace: cert-manager
+config:
+  apiVersion: controller.config.cert-manager.io/v1alpha1
+  kind: ControllerConfiguration
+  logging:
+    format: json
+resources:
+  requests:
+    cpu: 20m
+    memory: 96Mi
+  limits:
+    memory: 256Mi
+webhook:
+  config:
+    apiVersion: webhook.config.cert-manager.io/v1alpha1
+    kind: WebhookConfiguration
+    logging:
+      format: json
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      memory: 96Mi
+cainjector:
+  config:
+    apiVersion: cainjector.config.cert-manager.io/v1alpha1
+    kind: CAInjectorConfiguration
+    logging:
+      format: json
+  resources:
+    requests:
+      cpu: 10m
+      memory: 64Mi
+    limits:
+      memory: 192Mi
+startupapicheck:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      memory: 64Mi

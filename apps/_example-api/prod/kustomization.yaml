@@ -1,0 +1,36 @@
+# Template of an api service (NestJS): copy to apps/<name>/prod (apps/README.md).
+# Built and checked in CI, never deployed: the apps-prod ApplicationSet skips apps/_*.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: prod
+resources:
+  - service.yaml
+  - example-api-secrets.sealedsecret.yaml
+components:
+  # Order matters: service first, then the kind, then the host.
+  - ../../../components/service
+  - ../../../components/api
+  - ../../../components/subdomain
+# Non-secret runtime env of the pods and the migrate Job (envFrom). The name
+# gets a content hash, so every change rolls the pods.
+configMapGenerator:
+  - name: example-api-config
+    literals:
+      - LOG_LEVEL=info
+# Images only by digest. The deploy PR (.github, deploy-pr.yml) replaces digest
+# and source-sha in place: keep the keys, never add newName or newTag.
+images:
+  - name: ghcr.io/nick-lukashik/example-api
+    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+commonAnnotations:
+  nick-lukashik.com/source-sha: "0000000000000000000000000000000000000000"
+  nick-lukashik.com/source-repo: nick-lukashik/example-api
+
+# Replace with read-only routes that exercise this service's core functionality.
+patches:
+  - target:
+      kind: IngressRoute
+    patch: |-
+      - op: replace
+        path: /metadata/annotations/nl-gitops~1smoke-paths
+        value: "/api/v1/notes?limit=1"

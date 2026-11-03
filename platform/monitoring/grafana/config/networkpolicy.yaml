@@ -1,0 +1,26 @@
+# Grafana accepts traffic only from Traefik (the admin route, E4) and
+# from Prometheus for /metrics (policy from-prometheus in
+# kube-prometheus-stack/config). Namespace monitoring denies the rest
+# (platform/policies/monitoring.yaml). kubectl port-forward is not subject to
+# network policies.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: grafana
+  namespace: monitoring
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: grafana
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
+      ports:
+        - port: 3000

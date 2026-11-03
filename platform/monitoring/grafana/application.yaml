@@ -1,0 +1,37 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: grafana
+  namespace: argocd
+spec:
+  project: platform
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  sources:
+    - repoURL: https://grafana-community.github.io/helm-charts
+      chart: grafana
+      targetRevision: 14.3.0
+      helm:
+        releaseName: grafana
+        valueFiles:
+          - $values/components/settings/settings.yaml
+          - $values/platform/monitoring/grafana/values.yaml
+    - repoURL: git@github.com:nick-lukashik/gitops.git
+      targetRevision: master
+      ref: values
+    - repoURL: git@github.com:nick-lukashik/gitops.git
+      targetRevision: master
+      path: platform/monitoring/grafana/config
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

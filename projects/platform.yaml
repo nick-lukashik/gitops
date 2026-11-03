@@ -1,0 +1,41 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: platform
+  namespace: argocd
+  annotations:
+    # Recipients "<chat id>|<topic id>" are filled from components/settings.
+    notifications.argoproj.io/subscribe.on-sync-failed.telegram: "CHAT|TOPIC"
+    notifications.argoproj.io/subscribe.on-health-degraded.telegram: "CHAT|TOPIC"
+    notifications.argoproj.io/subscribe.on-sync-status-unknown.telegram: "CHAT|TOPIC"
+spec:
+  description: Platform components; cluster-scoped resources allowed.
+  sourceRepos:
+    - git@github.com:nick-lukashik/gitops.git
+    # Same repo over HTTPS: it is public, the switch is optional (docs/runbook/access.md).
+    - https://github.com/nick-lukashik/gitops.git
+    - https://argoproj.github.io/argo-helm
+    - https://bitnami.github.io/sealed-secrets
+    - https://charts.jetstack.io
+    - https://prometheus-community.github.io/helm-charts
+    - https://grafana.github.io/helm-charts
+    - https://grafana-community.github.io/helm-charts
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: argocd
+    - server: https://kubernetes.default.svc
+      namespace: kube-system
+    - server: https://kubernetes.default.svc
+      namespace: cert-manager
+    - server: https://kubernetes.default.svc
+      namespace: traefik
+    - server: https://kubernetes.default.svc
+      namespace: monitoring
+    - server: https://kubernetes.default.svc
+      namespace: monitoring-node
+    # Namespace-level policies of prod (quota, limits, network policies).
+    - server: https://kubernetes.default.svc
+      namespace: prod
+  clusterResourceWhitelist:
+    - group: "*"
+      kind: "*"

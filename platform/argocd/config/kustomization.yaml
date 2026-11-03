@@ -1,0 +1,7 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - argocd-notifications-secret.sealedsecret.yaml
+  # Enable in stage E4: Argo CD at https://admin.<domain>/argocd behind the ops gate.
+  # Before that, set configs.cm.url and notifications.argocdUrl in ../values.yaml.
+  # - ../admin-route

@@ -1,0 +1,104 @@
+rule_files:
+  - platform.rules.yaml
+evaluation_interval: 1m
+tests:
+  - name: certificate expires in 10 days, another in 30
+    interval: 5m
+    input_series:
+      # time() is 0 at the start of the test.
+      - series: 'certmanager_certificate_expiration_timestamp_seconds{namespace="traefik",name="wildcard"}'
+        values: '864000x30'
+      - series: 'certmanager_certificate_expiration_timestamp_seconds{namespace="traefik",name="other"}'
+        values: '2592000x30'
+    alert_rule_test:
+      - eval_time: 50m
+        alertname: CertificateExpiringSoon
+        exp_alerts: []
+      - eval_time: 65m
+        alertname: CertificateExpiringSoon
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              namespace: traefik
+              name: wildcard
+            exp_annotations:
+              summary: Certificate traefik/wildcard expires in less than 14 days
+              description: cert-manager has not renewed the certificate.
+              runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#certificateexpiringsoon
+
+  - name: 10% of responses are 5xx on one router, 1% on another
+    interval: 1m
+    input_series:
+      - series: 'traefik_router_requests_total{router="prod-landing-web@kubernetescrd",code="200",method="GET",protocol="http"}'
+        values: '0+90x20'
+      - series: 'traefik_router_requests_total{router="prod-landing-web@kubernetescrd",code="503",method="GET",protocol="http"}'
+        values: '0+10x20'
+      - series: 'traefik_router_requests_total{router="prod-id@kubernetescrd",code="200",method="GET",protocol="http"}'
+        values: '0+99x20'
+      - series: 'traefik_router_requests_total{router="prod-id@kubernetescrd",code="500",method="GET",protocol="http"}'
+        values: '0+1x20'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: TraefikHigh5xxRate
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              router: prod-landing-web@kubernetescrd
+            exp_annotations:
+              summary: Router prod-landing-web@kubernetescrd answers 5xx to 10% of requests
+              description: More than 5% of responses were 5xx over the last 5 minutes.
+              runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#traefikhigh5xxrate
+
+  - name: Argo CD application OutOfSync and Degraded
+    interval: 1m
+    input_series:
+      - series: 'argocd_app_info{name="landing-web-prod",project="prod",namespace="argocd",sync_status="OutOfSync",health_status="Healthy"}'
+        values: '1x30'
+      - series: 'argocd_app_info{name="root",project="platform",namespace="argocd",sync_status="Synced",health_status="Degraded"}'
+        values: '1x30'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: ArgoCDAppOutOfSync
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: ArgoCDAppOutOfSync
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              name: landing-web-prod
+              project: prod
+            exp_annotations:
+              summary: Argo CD application landing-web-prod is OutOfSync
+              description: The live state differs from git for 15 minutes.
+              runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#argocdappoutofsync
+      - eval_time: 16m
+        alertname: ArgoCDAppDegraded
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              name: root
+              project: platform
+            exp_annotations:
+              summary: Argo CD application root is Degraded
+              description: The application has been Degraded for 15 minutes.
+              runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#argocdappdegraded
+
+  - name: Loki discards lines
+    interval: 1m
+    input_series:
+      - series: 'loki_discarded_samples_total{reason="rate_limited",tenant="fake"}'
+        values: '0x10 5+5x10'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: LokiDiscardingSamples
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LokiDiscardingSamples
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              reason: rate_limited
+            exp_annotations:
+              summary: Loki discards log lines (rate_limited)
+              description: Loki rejected log lines in the last 10 minutes.
+              runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#lokidiscardingsamples

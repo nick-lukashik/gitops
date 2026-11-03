@@ -1,0 +1,21 @@
+# Local config for the components; never deployed.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: service
+  annotations:
+    config.kubernetes.io/local-config: "true"
+data:
+  # = folder apps/<name> = repository = image ghcr.io/nick-lukashik/<name>.
+  name: example-web
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: route
+  annotations:
+    config.kubernetes.io/local-config: "true"
+data:
+  # Host <subdomain>.<domain> (one level: the wildcard certificate covers *.<domain>).
+  # For the root domain drop this ConfigMap and components/subdomain.
+  subdomain: example

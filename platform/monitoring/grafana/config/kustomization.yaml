@@ -1,0 +1,10 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - grafana-admin.sealedsecret.yaml
+  - grafana-auth-proxy.sealedsecret.yaml
+  - networkpolicy.yaml
+  # Enable when the admin console serves /api/ops/auth (stage E4): Grafana at
+  # https://admin.<domain>/grafana behind the ops gate. In the same PR set
+  # grafana.ini auth.anonymous.enabled: false in ../values.yaml.
+  # - ../admin-route

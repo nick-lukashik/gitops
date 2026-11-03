@@ -1,0 +1,14 @@
+# Also used by bootstrap/install.sh (first install). Argo CD manages upgrades.
+# Name and namespace match kubeseal defaults (kube-system/sealed-secrets-controller).
+fullnameOverride: sealed-secrets-controller
+# Own 10-year key from Bitwarden (bootstrap/install.sh); no automatic rotation.
+keyrenewperiod: "0"
+logFormat: json
+logLevel: INFO
+priorityClassName: platform-critical
+resources:
+  requests:
+    cpu: 20m
+    memory: 64Mi
+  limits:
+    memory: 128Mi

@@ -1,0 +1,64 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: platform
+  namespace: monitoring
+spec:
+  groups:
+    - name: cert-manager
+      rules:
+        # cert-manager renews 30 days ahead, so this means renewal is failing.
+        - alert: CertificateExpiringSoon
+          expr: certmanager_certificate_expiration_timestamp_seconds - time() < 14 * 24 * 3600
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: Certificate {{ $labels.namespace }}/{{ $labels.name }} expires in less than 14 days
+            description: cert-manager has not renewed the certificate.
+            runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#certificateexpiringsoon
+    - name: traefik
+      rules:
+        # Per router, i.e. per IngressRoute host.
+        - alert: TraefikHigh5xxRate
+          expr: |
+            sum by (router) (rate(traefik_router_requests_total{code=~"5.."}[5m]))
+              / sum by (router) (rate(traefik_router_requests_total[5m])) > 0.05
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: Router {{ $labels.router }} answers 5xx to {{ $value | humanizePercentage }} of requests
+            description: More than 5% of responses were 5xx over the last 5 minutes.
+            runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#traefikhigh5xxrate
+    - name: argocd
+      rules:
+        - alert: ArgoCDAppOutOfSync
+          expr: max by (name, project) (argocd_app_info{sync_status="OutOfSync"}) == 1
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: Argo CD application {{ $labels.name }} is OutOfSync
+            description: The live state differs from git for 15 minutes.
+            runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#argocdappoutofsync
+        - alert: ArgoCDAppDegraded
+          expr: max by (name, project) (argocd_app_info{health_status="Degraded"}) == 1
+          for: 15m
+          labels:
+            severity: critical
+          annotations:
+            summary: Argo CD application {{ $labels.name }} is Degraded
+            description: The application has been Degraded for 15 minutes.
+            runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#argocdappdegraded
+    - name: loki
+      rules:
+        # Loki rejects log lines (rate limits, too old, too long).
+        - alert: LokiDiscardingSamples
+          expr: sum by (reason) (increase(loki_discarded_samples_total[10m])) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: Loki discards log lines ({{ $labels.reason }})
+            description: Loki rejected log lines in the last 10 minutes.
+            runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#lokidiscardingsamples

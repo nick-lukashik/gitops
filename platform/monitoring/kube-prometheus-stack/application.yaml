@@ -1,0 +1,41 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kube-prometheus-stack
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-5"
+spec:
+  project: platform
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  sources:
+    - repoURL: https://prometheus-community.github.io/helm-charts
+      chart: kube-prometheus-stack
+      targetRevision: 92.17.0
+      helm:
+        releaseName: kube-prometheus-stack
+        valueFiles:
+          - $values/components/settings/settings.yaml
+          - $values/platform/monitoring/kube-prometheus-stack/values.yaml
+    - repoURL: git@github.com:nick-lukashik/gitops.git
+      targetRevision: master
+      ref: values
+    - repoURL: git@github.com:nick-lukashik/gitops.git
+      targetRevision: master
+      path: platform/monitoring/kube-prometheus-stack/config
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # The Prometheus Operator CRDs are too large for client-side apply.
+      - ServerSideApply=true
+      - SkipDryRunOnMissingResource=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m
