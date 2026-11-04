@@ -24,9 +24,9 @@ configMapGenerator:
 # the summary of job "image" of id-api; then the deploy PR keeps them current.
 images:
   - name: ghcr.io/nick-lukashik/id-api
-    digest: sha256:e3c42f241a4199aff137b6bcb084bbb4ee6bf05ac39195f9eb56ac68b02fa3d8
+    digest: sha256:acc55356196ce6bfa709686314853fbef5903b59fb7bf21559799408184397dc
 commonAnnotations:
-  nick-lukashik.com/source-sha: "4328c23356fb1e198dbf87c9ade5f98177aa1e60"
+  nick-lukashik.com/source-sha: "c121c4a24b051a34a5dd78fd7572f067509765a6"
   nick-lukashik.com/source-repo: nick-lukashik/id-api
 patches:
   # It calls other apis (JWKS of id-api at least): the one label for both
