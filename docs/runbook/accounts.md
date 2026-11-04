@@ -161,7 +161,7 @@ Then answer the person: the account is deleted; backups drop it within 14 days a
 
 ## Again after a restore
 
-A point-in-time restore to a moment before a deletion brings the account back (`infra` `docs/recovery.md`). Run the deletion again for every line of `account-deletions` later than the restore target. The note has only the user id; the email comes from the restored row. `PRIMARY` and `pg` as in [Set up](#set-up), with the cluster the services use.
+A point-in-time restore to a moment before a deletion brings the account back (`infra` `docs/recovery.md`). Run the deletion again for every line of `account-deletions` later than the restore target. A restore with no target ends at the last archived segment, so a deletion of the last minutes before the loss may be undone too: compare with the time of its last replayed transaction (Loki: `{namespace="data"} |= "last completed transaction"`) or, since the steps are safe to repeat, run every line from the last day before the loss. The note has only the user id; the email comes from the restored row. `PRIMARY` and `pg` as in [Set up](#set-up), with the cluster the services use.
 
 ```sh
 USER_ID='00000000-0000-0000-0000-000000000000'   # from the note
