@@ -99,12 +99,13 @@ livenessProbe:
   timeoutSeconds: 30
   failureThreshold: 10
 
+# Grafana 13 initializes its app platform at start and is OOMKilled at 256 MiB.
 resources:
   requests:
     cpu: 50m
-    memory: 128Mi
-  limits:
     memory: 256Mi
+  limits:
+    memory: 512Mi
 
 testFramework:
   enabled: false
