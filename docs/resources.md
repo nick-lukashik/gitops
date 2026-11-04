@@ -25,6 +25,7 @@ Request and limit of memory from the values in `platform/`. Short Jobs (`startup
 | **All** | | **≈ 7.8 GiB (63%)** | **≈ 16.0 GiB (128%)** |
 
 - The requests fit with room to spare. The limits exceed the node memory by a quarter: not all components reach their limit at once, and under pressure the kubelet evicts pods of lower priority first (`batch`, then `service`).
+- Every service runs at least two replicas (HorizontalPodAutoscaler 2 to 4 on CPU, `components/service`), so a service costs twice its pod in the `prod` quota and more while it is scaled out. When the quota is full, the autoscaler cannot add pods: that is the cap, and the quota grows in a PR when it is reached.
 - A container in `prod` without its own resources gets a 128 MiB request and a 256 MiB limit (LimitRange `defaults`). Services set their own in the components: web 128 MiB request / 384 MiB limit, api 192 MiB / 512 MiB, the api migrate Job 128 MiB / 512 MiB; a CPU request only, no CPU limit ([components/README.md](../components/README.md)).
 - Stage `E3-core` adds Postgres (CNPG), RabbitMQ and Redis, roughly another 2–3.5 GiB of requests. Before it, review the `prod` quota and the Prometheus limits.
 

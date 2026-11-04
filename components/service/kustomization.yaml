@@ -1,6 +1,7 @@
 apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
-# Common part of every service (README "Services"): Deployment, Service,
+# Common part of every service (README "Services"): Deployment (2 to 4 replicas
+# through a HorizontalPodAutoscaler, PodDisruptionBudget of one), Service,
 # IngressRoute on the root domain (real-ip; api adds body-limit), NetworkPolicy: ingress
 # from Traefik, egress to DNS only. Include it first,
 # then exactly one of components/api or components/web, then optionally
@@ -40,6 +41,19 @@ replacements:
           - metadata.labels.[app.kubernetes.io/name]
           - spec.selector.matchLabels.[app.kubernetes.io/name]
           - spec.template.metadata.labels.[app.kubernetes.io/name]
+          - spec.template.spec.topologySpreadConstraints.0.labelSelector.matchLabels.[app.kubernetes.io/name]
+      - select:
+          kind: HorizontalPodAutoscaler
+        fieldPaths:
+          - metadata.name
+          - metadata.labels.[app.kubernetes.io/name]
+          - spec.scaleTargetRef.name
+      - select:
+          kind: PodDisruptionBudget
+        fieldPaths:
+          - metadata.name
+          - metadata.labels.[app.kubernetes.io/name]
+          - spec.selector.matchLabels.[app.kubernetes.io/name]
       # ghcr.io/nick-lukashik/SERVICE
       - select:
           kind: Deployment
