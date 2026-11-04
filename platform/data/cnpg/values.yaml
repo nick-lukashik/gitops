@@ -1,0 +1,12 @@
+# CloudNativePG operator 1.30 (chart 0.29). One replica watches every namespace.
+crds:
+  create: true
+config:
+  clusterWide: true
+priorityClassName: platform-critical
+resources:
+  requests:
+    cpu: 20m
+    memory: 96Mi
+  limits:
+    memory: 256Mi

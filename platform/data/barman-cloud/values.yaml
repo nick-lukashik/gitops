@@ -1,0 +1,9 @@
+# Barman Cloud plugin 0.15 (chart 0.8). The sidecar it injects into the
+# Postgres pods is configured by the ObjectStore (platform/data/stores).
+priorityClassName: platform-critical
+resources:
+  requests:
+    cpu: 10m
+    memory: 64Mi
+  limits:
+    memory: 128Mi
