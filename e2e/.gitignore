@@ -1,0 +1,4 @@
+# Written by tests/stack.ts for every run: images and generated secrets.
+.env
+# A local override for one run (README.md); never committed.
+compose.override.yaml

@@ -1,0 +1,49 @@
+{
+    "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+    "vcs": {
+        "enabled": false
+    },
+    "files": {
+        "includes": ["**", "!**/node_modules", "!**/test-results", "!**/playwright-report", "!**/blob-report"]
+    },
+    "formatter": {
+        "enabled": true,
+        "indentStyle": "space",
+        "indentWidth": 4,
+        "lineWidth": 120,
+        "lineEnding": "lf"
+    },
+    "javascript": {
+        "formatter": {
+            "quoteStyle": "single",
+            "semicolons": "asNeeded",
+            "trailingCommas": "all",
+            "arrowParentheses": "asNeeded",
+            "bracketSpacing": true,
+            "bracketSameLine": false,
+            "quoteProperties": "asNeeded",
+            "attributePosition": "multiline",
+            "expand": "always",
+            "operatorLinebreak": "before"
+        }
+    },
+    "linter": {
+        "enabled": true,
+        "rules": {
+            "preset": "recommended",
+            "style": {
+                "useImportType": { "level": "error", "options": { "style": "inlineType" } },
+                "useConsistentArrayType": { "level": "error", "options": { "syntax": "shorthand" } },
+                "useConsistentTypeDefinitions": { "level": "error", "options": { "style": "type" } },
+                "useFilenamingConvention": { "level": "error", "options": { "filenameCases": ["kebab-case"] } }
+            }
+        }
+    },
+    "assist": {
+        "actions": {
+            "source": {
+                "organizeImports": "on"
+            }
+        }
+    }
+}
