@@ -1,0 +1,252 @@
+# The deployed set end to end on one machine (README.md). The service images
+# are the digests of apps/<service>/prod (scripts/versions.sh --env); they and
+# the secrets of the run come from .env, which tests/stack.ts writes before
+# every run. Data stores as in platform/data/stores, Mailpit for email. Ports
+# on 127.0.0.1 only: id-web 3900, Mailpit 3901.
+name: nl-e2e
+
+# id-web's public origin: the issuer of access tokens, links in emails, the
+# fake checkout. Keep it equal to WEB_URL in tests/stack.ts.
+x-origin: &origin http://localhost:3900
+
+# The pod contract (components/service): the image's non-root user, read-only
+# root filesystem with /tmp writable, no capabilities. The service images are
+# published for amd64 only. Health: the image's HEALTHCHECK, polled every
+# second while starting.
+x-service: &service
+  platform: linux/amd64
+  read_only: true
+  tmpfs:
+    - /tmp
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  healthcheck:
+    start_period: 120s
+    start_interval: 1s
+
+# Migrations the way the cluster runs them (components/api, the migrate Job):
+# the same image, node dist/db/migrate.js, which reads only DATABASE_URL.
+x-migrate: &migrate
+  <<: *service
+  command: [node, dist/db/migrate.js]
+  healthcheck:
+    disable: true
+  depends_on:
+    postgres:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: docker.io/library/postgres:18.3-alpine@sha256:54451ecb8ab38c24c3ec123f2fd501303a3a1856a5c66e98cecf2460d5e1e9d7
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run the tests, tests/stack.ts writes .env}
+      # Read by postgres-init.sql: one database and owner role per api.
+      PG_ID_PASSWORD: ${PG_ID_PASSWORD:?}
+      PG_NOTIFICATIONS_PASSWORD: ${PG_NOTIFICATIONS_PASSWORD:?}
+      PG_WALLET_PASSWORD: ${PG_WALLET_PASSWORD:?}
+      PG_PAY_PASSWORD: ${PG_PAY_PASSWORD:?}
+    volumes:
+      - ./postgres-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    # Data of one run only: a recreated container starts empty.
+    tmpfs:
+      - /var/lib/postgresql
+    healthcheck:
+      # TCP, not the socket: the entrypoint's init server listens on the socket only.
+      test: [CMD, pg_isready, -h, 127.0.0.1, -U, postgres]
+      interval: 5s
+      start_period: 60s
+      start_interval: 1s
+
+  redis:
+    image: docker.io/library/redis:8.10.3-alpine@sha256:21090af93f8324db2f0f0f4f38a7c60369d47d917e000c3423d89d2ae2883537
+    command: [redis-server, --requirepass, "${REDIS_PASSWORD:?}", --save, "", --appendonly, "no"]
+    environment:
+      REDISCLI_AUTH: ${REDIS_PASSWORD:?}
+    healthcheck:
+      test: [CMD-SHELL, redis-cli ping | grep -q PONG]
+      interval: 5s
+      start_period: 30s
+      start_interval: 1s
+
+  rabbitmq:
+    image: docker.io/library/rabbitmq:4.4.0-alpine@sha256:21577d148f4f7563a87d761862fa353f59348a094833ca8b1b1a46a8102dffce
+    # One user for every api; the cluster has one per api (rabbitmq-definitions).
+    environment:
+      RABBITMQ_DEFAULT_USER: e2e
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?}
+    tmpfs:
+      - /var/lib/rabbitmq
+    healthcheck:
+      test: [CMD, rabbitmq-diagnostics, -q, check_port_connectivity]
+      interval: 5s
+      start_period: 90s
+      start_interval: 2s
+
+  id-api-migrate:
+    <<: *migrate
+    image: ${ID_API_IMAGE:?run the tests, tests/stack.ts writes .env}
+    environment:
+      DATABASE_URL: postgres://id:${PG_ID_PASSWORD}@postgres:5432/id
+
+  id-api:
+    <<: *service
+    image: ${ID_API_IMAGE:?}
+    environment:
+      # apps/id-api/prod: the ConfigMap literals.
+      LOG_LEVEL: info
+      DATABASE_POOL_MAX: 5
+      TRUST_PROXY_HOPS: 1
+      DATABASE_URL: postgres://id:${PG_ID_PASSWORD}@postgres:5432/id
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      RABBITMQ_URL: amqp://e2e:${RABBITMQ_PASSWORD}@rabbitmq:5672
+      TOKEN_ISSUER: *origin
+      SIGNING_KEY_PEM: ${ID_SIGNING_KEY_PEM:?}
+      LOGIN_CODE_PEPPER: ${ID_LOGIN_CODE_PEPPER:?}
+      INTERNAL_API_TOKEN: ${ID_INTERNAL_TOKEN:?}
+      NOTIFICATIONS_URL: http://notifications-api:3000
+      NOTIFICATIONS_INTERNAL_TOKEN: ${NOTIFICATIONS_INTERNAL_TOKEN:?}
+    depends_on:
+      id-api-migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  notifications-api-migrate:
+    <<: *migrate
+    image: ${NOTIFICATIONS_API_IMAGE:?}
+    environment:
+      DATABASE_URL: postgres://notifications:${PG_NOTIFICATIONS_PASSWORD}@postgres:5432/notifications
+
+  notifications-api:
+    <<: *service
+    image: ${NOTIFICATIONS_API_IMAGE:?}
+    environment:
+      # apps/notifications-api/prod: the ConfigMap literals.
+      LOG_LEVEL: info
+      DATABASE_POOL_MAX: 5
+      MAIL_TRANSPORT: smtp
+      DATABASE_URL: postgres://notifications:${PG_NOTIFICATIONS_PASSWORD}@postgres:5432/notifications
+      RABBITMQ_URL: amqp://e2e:${RABBITMQ_PASSWORD}@rabbitmq:5672
+      ID_JWKS_URL: http://id-api:3000/.well-known/jwks.json
+      TOKEN_ISSUER: *origin
+      ID_API_URL: http://id-api:3000
+      ID_INTERNAL_TOKEN: ${ID_INTERNAL_TOKEN:?}
+      INTERNAL_API_TOKEN: ${NOTIFICATIONS_INTERNAL_TOKEN:?}
+      # Mailpit in this network namespace: plain SMTP is allowed to localhost only.
+      SMTP_URL: smtp://localhost:1025
+      ID_WEB_URL: *origin
+    # Mailpit's API and UI: the port belongs to this namespace.
+    ports:
+      - 127.0.0.1:3901:8025
+    depends_on:
+      notifications-api-migrate:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+
+  mailpit:
+    image: docker.io/axllent/mailpit:v1.33.0@sha256:9b3a463be15354c0f0eba91697d80e3e0d8a5623ef0e627cacc836bc17fd5231
+    # notifications-api's SMTP transport requires STARTTLS for any host but
+    # localhost (src/mail/mail-transport.ts), so Mailpit shares its network
+    # namespace and takes SMTP on its loopback only.
+    network_mode: service:notifications-api
+    environment:
+      MP_SMTP_BIND_ADDR: 127.0.0.1:1025
+      MP_UI_BIND_ADDR: 0.0.0.0:8025
+    healthcheck:
+      test: [CMD, /mailpit, readyz]
+      interval: 5s
+      start_period: 30s
+      start_interval: 1s
+    depends_on:
+      notifications-api:
+        condition: service_started
+
+  wallet-api-migrate:
+    <<: *migrate
+    image: ${WALLET_API_IMAGE:?}
+    environment:
+      DATABASE_URL: postgres://wallet:${PG_WALLET_PASSWORD}@postgres:5432/wallet
+
+  wallet-api:
+    <<: *service
+    image: ${WALLET_API_IMAGE:?}
+    environment:
+      # apps/wallet-api/prod: the ConfigMap literals.
+      LOG_LEVEL: info
+      DATABASE_POOL_MAX: 5
+      DATABASE_URL: postgres://wallet:${PG_WALLET_PASSWORD}@postgres:5432/wallet
+      RABBITMQ_URL: amqp://e2e:${RABBITMQ_PASSWORD}@rabbitmq:5672
+      ID_JWKS_URL: http://id-api:3000/.well-known/jwks.json
+      TOKEN_ISSUER: *origin
+      INTERNAL_API_TOKEN: ${WALLET_INTERNAL_TOKEN:?}
+    depends_on:
+      wallet-api-migrate:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+
+  # Profile "pay": pay-api has no apps/pay-api/prod yet; tests/stack.ts turns
+  # it on when PAY_API_IMAGE is set (the deployed set once it has a folder, or
+  # by hand). Without it the payment tests are skipped.
+  pay-api-migrate:
+    <<: *migrate
+    profiles: [pay]
+    image: ${PAY_API_IMAGE:-pay-api-image-not-set}
+    environment:
+      DATABASE_URL: postgres://pay:${PG_PAY_PASSWORD}@postgres:5432/pay
+
+  pay-api:
+    <<: *service
+    profiles: [pay]
+    image: ${PAY_API_IMAGE:-pay-api-image-not-set}
+    environment:
+      LOG_LEVEL: info
+      DATABASE_POOL_MAX: 5
+      DATABASE_URL: postgres://pay:${PG_PAY_PASSWORD}@postgres:5432/pay
+      RABBITMQ_URL: amqp://e2e:${RABBITMQ_PASSWORD}@rabbitmq:5672
+      ID_JWKS_URL: http://id-api:3000/.well-known/jwks.json
+      TOKEN_ISSUER: *origin
+      ID_API_URL: http://id-api:3000
+      ID_INTERNAL_TOKEN: ${ID_INTERNAL_TOKEN:?}
+      ID_WEB_URL: *origin
+      # The test provider: no money moves; NODE_ENV=production needs the opt-in.
+      PAY_PROVIDER: fake
+      PAY_ALLOW_FAKE: "true"
+    depends_on:
+      pay-api-migrate:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+
+  id-web:
+    <<: *service
+    image: ${ID_WEB_IMAGE:?}
+    # The Next.js cache is the other writable directory (id-web Dockerfile).
+    tmpfs:
+      - /tmp
+      - /app/.next/cache
+    environment:
+      # http: the cookies fall back to the bare names (no __Host- prefix).
+      SITE_URL: *origin
+      ID_API_URL: http://id-api:3000
+      WALLET_API_URL: http://wallet-api:3000
+      PAY_API_URL: http://pay-api:3000
+      NOTIFICATIONS_API_URL: http://notifications-api:3000
+      SESSION_SECRET: ${ID_WEB_SESSION_SECRET:?}
+    ports:
+      - 127.0.0.1:3900:3000
+    depends_on:
+      id-api:
+        condition: service_healthy
+      notifications-api:
+        condition: service_healthy
+      wallet-api:
+        condition: service_healthy
+      pay-api:
+        condition: service_healthy
+        required: false

@@ -1,0 +1,4 @@
+# Exact versions on `pnpm add`.
+savePrefix: ""
+# Skip releases younger than 3 days (minutes), the same as the service repos.
+minimumReleaseAge: 4320

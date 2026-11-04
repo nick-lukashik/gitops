@@ -1,0 +1,103 @@
+name: e2e
+
+# The deployed set end to end (e2e/README.md): the images of apps/*/prod by
+# digest, their data stores and Mailpit in Docker Compose, one Playwright
+# scenario through id-web from the sign-in email to the receipt email. Runs on
+# PRs that change the deployed set (the deploy PRs) or the e2e itself, and by
+# hand. Images are pulled, never built. Not required by the master ruleset:
+# the owner reads it before merging a deploy PR.
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - "apps/*/prod/**"
+      - "e2e/**"
+      - "scripts/versions.sh"
+      - ".github/workflows/e2e.yml"
+  workflow_dispatch:
+    inputs:
+      pay-api-image:
+        description: "pay-api while apps/pay-api/prod does not exist: ghcr.io/nick-lukashik/pay-api:<tag> or @sha256:<digest>. Empty skips the payment tests."
+        type: string
+        default: ""
+
+concurrency:
+  group: e2e-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The record of what this run tested, in the job summary.
+      - name: Deployed set
+        run: |
+          scripts/versions.sh | tee "$RUNNER_TEMP/versions.txt"
+          {
+            echo '### Deployed set'
+            echo '```'
+            cat "$RUNNER_TEMP/versions.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: pay-api image
+        if: github.event_name == 'workflow_dispatch' && inputs.pay-api-image != ''
+        env:
+          IMAGE: ${{ inputs.pay-api-image }}
+        run: |
+          if [[ ! $IMAGE =~ ^ghcr\.io/nick-lukashik/pay-api(:[A-Za-z0-9._-]{1,128}|@sha256:[0-9a-f]{64})$ ]]; then
+            echo "::error::pay-api-image: ghcr.io/nick-lukashik/pay-api:<tag> or @sha256:<digest>"
+            exit 1
+          fi
+          echo "PAY_API_IMAGE=$IMAGE" >> "$GITHUB_ENV"
+          echo "pay-api: \`$IMAGE\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          package_json_file: e2e/tests/package.json
+          cache: true
+          cache_dependency_path: e2e/tests/pnpm-lock.yaml
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: e2e/tests/.node-version
+
+      - name: Install dependencies
+        working-directory: e2e/tests
+        run: pnpm install --frozen-lockfile
+
+      # Biome and tsc of the test code; make verify (ci / verify) covers the rest.
+      - name: Lint and typecheck
+        working-directory: e2e/tests
+        run: pnpm verify
+
+      - name: Install Playwright browser
+        working-directory: e2e/tests
+        run: pnpm exec playwright install --with-deps --only-shell chromium
+
+      # The global setup brings the stack up and removes it after the tests.
+      - name: End-to-end tests
+        working-directory: e2e/tests
+        run: pnpm test
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-report
+          path: |
+            e2e/tests/playwright-report/
+            e2e/tests/test-results/
+          retention-days: 7
