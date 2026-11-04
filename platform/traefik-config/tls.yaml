@@ -7,6 +7,11 @@ metadata:
 spec:
   defaultCertificate:
     secretName: wildcard-nick-lukashik-com-tls
+  # sniStrict (TLSOption below) matches the SNI only against these certificates,
+  # never against defaultCertificate: without this list every handshake fails
+  # with "unrecognized name" (Cloudflare 525).
+  certificates:
+    - secretName: wildcard-nick-lukashik-com-tls
 ---
 # TLS 1.2+, and only Cloudflare may connect: a client certificate signed by the
 # Authenticated Origin Pulls CA is required. A direct connection fails the handshake.
