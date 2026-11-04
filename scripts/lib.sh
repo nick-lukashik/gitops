@@ -16,6 +16,7 @@ IMG_ALERTMANAGER=docker.io/prom/alertmanager:v0.34.2@sha256:39d8bb3966c694a12442
 IMG_ALLOY=docker.io/grafana/alloy:v1.21.3@sha256:8ab871206bd2d8f89277f53abffee5f452a293980788d52f85fa183a87a505a4
 IMG_SHELLCHECK=docker.io/koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d
 IMG_ACTIONLINT=docker.io/rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+IMG_NODE=docker.io/library/node:26.13.0-alpine@sha256:c6ad9e9c1d80f6eb607c26b4b0a132ff7a2344fad1c78ea3baa2a7d4c8de6d94
 
 # Kubernetes version of K3s (infra node/k3s/install.sh: v1.36.5+k3s1).
 KUBE_VERSION=1.36.0

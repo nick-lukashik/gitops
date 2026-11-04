@@ -1,13 +1,17 @@
 # RabbitMQ 4, one node: the events between the services (outbox → exchange
-# <producer>.events → each consumer's queue, retries, DLQ). Users, one per
-# api, come from the sealed definitions (rabbitmq-definitions).
+# <producer>.events → each consumer's queue, retries, DLQ). At boot it loads
+# every file in /etc/rabbitmq/definitions, by name: the topology
+# (rabbitmq-topology.json, the same exchanges, queues and bindings the services
+# declare, so an event finds its queues before their consumer ever started; a
+# change here restarts the broker) and the users, one per api, from the sealed
+# definitions (rabbitmq-definitions). make rabbitmq checks them on a real broker.
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: rabbitmq-config
 data:
   rabbitmq.conf: |
-    load_definitions = /etc/rabbitmq/definitions/definitions.json
+    load_definitions = /etc/rabbitmq/definitions
     loopback_users.guest = true
     listeners.tcp.default = 5672
     log.console = true
@@ -63,6 +67,9 @@ spec:
         runAsUser: 999
         runAsGroup: 999
         fsGroup: 999
+        # Not on every mount: a recursive change makes .erlang.cookie group-readable,
+        # and the broker then refuses to start on its own volume.
+        fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
       terminationGracePeriodSeconds: 60
@@ -113,12 +120,21 @@ spec:
               mountPath: /var/lib/rabbitmq
             - name: conf
               mountPath: /etc/rabbitmq/conf
+            # One file each: a whole volume would add its ..data directories, and
+            # a directory among the definitions stops the broker from booting.
+            - name: topology
+              mountPath: /etc/rabbitmq/definitions/10-topology.json
+              subPath: topology.json
             - name: definitions
-              mountPath: /etc/rabbitmq/definitions
+              mountPath: /etc/rabbitmq/definitions/20-users.json
+              subPath: definitions.json
       volumes:
         - name: conf
           configMap:
             name: rabbitmq-config
+        - name: topology
+          configMap:
+            name: rabbitmq-topology
         - name: definitions
           secret:
             secretName: rabbitmq-definitions

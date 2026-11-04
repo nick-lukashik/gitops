@@ -7,6 +7,15 @@ resources:
   - redis.yaml
   - rabbitmq.yaml
   - networkpolicy.yaml
+configMapGenerator:
+  # Plain definitions, no secrets; the hash in the name restarts the broker on a change.
+  - name: rabbitmq-topology
+    files:
+      - topology.json=rabbitmq-topology.json
+generatorOptions:
+  annotations:
+    # This Application never prunes: a replaced ConfigMap stays behind, and that is not a diff.
+    argocd.argoproj.io/compare-options: IgnoreExtraneous
 patches:
   # Secrets before what reads them.
   - target:

@@ -4,9 +4,9 @@ SHELL := bash
 .SHELLFLAGS := -euo pipefail -c
 .DEFAULT_GOAL := verify
 
-.PHONY: verify render static secrets domain destinations kustomize helm images apps netpol kubeconform rules alertmanager alloy shell clean
+.PHONY: verify render static secrets domain destinations kustomize helm images apps netpol kubeconform rules alertmanager alloy rabbitmq shell clean
 
-verify: static render images apps netpol kubeconform rules alertmanager alloy ## all checks
+verify: static render images apps netpol kubeconform rules alertmanager alloy rabbitmq ## all checks
 
 static: secrets domain destinations shell ## checks on files in git
 
@@ -51,5 +51,8 @@ alertmanager: helm ## amtool check-config of the rendered Alertmanager config
 alloy: ## Alloy syntax and masking test
 	scripts/check-alloy.sh
 
+rabbitmq: kustomize ## the rendered RabbitMQ definitions on a real broker, with what the services declare
+	scripts/check-rabbitmq.sh
+
 clean: ## remove rendered output (keeps the chart and schema cache)
-	rm -rf .cache/render .cache/rules .cache/alertmanager .cache/alloy .cache/netpol
+	rm -rf .cache/render .cache/rules .cache/alertmanager .cache/alloy .cache/netpol .cache/rabbitmq
