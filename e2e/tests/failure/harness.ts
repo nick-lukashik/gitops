@@ -224,10 +224,10 @@ export const test = base.extend<Fixtures>({
         const contexts: BrowserContext[] = []
         await use(async () => {
             const context = await browser.newContext({
-                // id-web takes this over plain http: id-api's limit per address (20 code
-                // requests an hour) then counts one person, not the whole suite.
+                // Cloudflare's header in prod: id-api's limit per address (20 code requests
+                // an hour) then counts one person, not the whole suite.
                 extraHTTPHeaders: {
-                    'x-forwarded-for': `203.0.113.${randomInt(1, 255)}`,
+                    'cf-connecting-ip': `203.0.113.${randomInt(1, 255)}`,
                 },
             })
             contexts.push(context)
@@ -295,21 +295,33 @@ export async function expectAccount(on: Page, email: string) {
     await expect(on.getByText(ui.account.email(email))).toBeVisible()
 }
 
-/** The session cookie as it is now (http: no __Host- prefix). */
+/** The session cookie as it is now. */
 export async function sessionCookie({ context }: Person) {
-    const cookie = (await context.cookies()).find(item => item.name === 'id_session')
+    const cookie = (await context.cookies()).find(item => item.name === '__Host-id_session')
     expect(cookie, 'the session cookie').toBeDefined()
     return cookie as Cookie
 }
 
-export async function signOut(on: Page) {
+export async function pressSignOut(on: Page) {
     await on
         .getByRole('banner')
         .getByRole('button', {
             name: ui.nav.signOut,
         })
         .click()
+}
+
+export async function signOut(on: Page) {
+    await pressSignOut(on)
     await expect(on).toHaveURL(/\/login$/)
+}
+
+/** id-api cannot end the session: the account says so, and the session stays. */
+export async function signOutRefused(person: Person) {
+    const before = await sessionCookie(person)
+    await pressSignOut(person.page)
+    await expect(person.page).toHaveURL(/\/account\?error=unavailable$/)
+    expect((await sessionCookie(person)).value).toBe(before.value)
 }
 
 /**

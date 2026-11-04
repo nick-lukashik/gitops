@@ -17,6 +17,7 @@ import {
     sessionCookie,
     signIn,
     signOut,
+    signOutRefused,
     start,
     startCheckout,
     stop,
@@ -105,11 +106,9 @@ test.describe('Postgres stops @failure', () => {
         expect(exited.split('\n').filter(service => service && !service.endsWith('-migrate'))).toEqual([])
     })
 
-    // Defect, id-api: a refresh rotates the token in Redis before it reads the session in
-    // Postgres. During an outage it answers 503 and id-web keeps the old token; past the
-    // grace window the next try counts as reuse and ends the session. After an outage over
-    // 20 s, whoever loaded a page during it has to sign in again.
-    test.fixme('a session used during the outage is still signed in afterwards', async ({ newPerson, request }) => {
+    // id-api reads the session in Postgres before it rotates the token in Redis: during an
+    // outage it answers 503 and the token has not turned, so no later try counts as reuse.
+    test('a session used during the outage is still signed in afterwards', async ({ newPerson, request }) => {
         const person = await newPerson()
         await signIn(person, request)
         const { page, email } = person
@@ -134,16 +133,26 @@ test.describe('Postgres stops @failure', () => {
         })
     })
 
-    // Defect, id-web and id-api: sign-out during an outage (private backlog).
-    test.fixme('sign-out during the outage ends the session once Postgres is back', async ({ newPerson, request }) => {
+    test('sign-out during the outage says so, keeps the session, and works once Postgres is back', async ({
+        newPerson,
+        request,
+    }) => {
         const person = await newPerson()
         await signIn(person, request)
-        const cookie = await sessionCookie(person)
+        const { page, email } = person
 
         await stop('postgres')
-        await signOut(person.page)
+        await signOutRefused(person)
         await start('postgres')
 
+        await expect(async () => {
+            await page.goto('/account')
+            await expectAccount(page, email)
+        }).toPass({
+            timeout: 60_000,
+        })
+        const cookie = await sessionCookie(person)
+        await signOut(page)
         await expectSessionOver(person, cookie)
     })
 })

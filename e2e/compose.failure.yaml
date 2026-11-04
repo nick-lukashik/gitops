@@ -46,10 +46,21 @@ services:
       service: id-web
     environment:
       ID_API_URL: http://id-api-2:3000
-    ports: !override
-      - 127.0.0.1:${E2E_WEB_2_PORT:-3902}:3000
     depends_on:
       id-api-2:
+        condition: service_healthy
+
+  id-web-2-tls:
+    extends:
+      file: compose.yaml
+      service: id-web-tls
+    environment:
+      SITE_PORT: ${E2E_WEB_2_PORT:-3902}
+      UPSTREAM: id-web-2:3000
+    ports: !override
+      - 127.0.0.1:${E2E_WEB_2_PORT:-3902}:${E2E_WEB_2_PORT:-3902}
+    depends_on:
+      id-web-2:
         condition: service_healthy
 
 volumes:

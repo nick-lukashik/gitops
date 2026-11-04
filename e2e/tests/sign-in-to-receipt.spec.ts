@@ -168,8 +168,13 @@ test('one receipt email per payment', async ({ request }) => {
 
 test('sign-out ends the session', async () => {
     await page.goto('/account')
-    const session = (await context.cookies()).find(cookie => cookie.name === 'id_session') as Cookie
-    expect(session, 'the session cookie (http: no __Host- prefix)').toBeDefined()
+    const session = (await context.cookies()).find(cookie => cookie.name === '__Host-id_session') as Cookie
+    expect(session, 'the session cookie').toMatchObject({
+        secure: true,
+        httpOnly: true,
+        sameSite: 'Lax',
+        path: '/',
+    })
     await page
         .getByRole('banner')
         .getByRole('button', {
@@ -177,7 +182,7 @@ test('sign-out ends the session', async () => {
         })
         .click()
     await expect(page).toHaveURL(/\/login$/)
-    expect((await context.cookies()).map(cookie => cookie.name)).not.toContain('id_session')
+    expect((await context.cookies()).map(cookie => cookie.name)).not.toContain('__Host-id_session')
     await page.goto('/account')
     await expect(page).toHaveURL(/\/login$/)
 

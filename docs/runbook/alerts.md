@@ -169,7 +169,14 @@ The oldest unpublished event is older than 5 minutes (critical). Events are comm
 
 ### OutboxEventsUnroutable
 
-RabbitMQ returned published events because no queue is bound to their routing key (critical). Nothing is lost: they stay in the outbox and are retried. A consumer queue is missing or its binding changed; deploying the consumer (it declares its queues) fixes it.
+RabbitMQ returned published events because no queue is bound to their routing key (critical). Nothing is lost: they stay in the outbox and are retried. The broker loads its exchanges, queues and bindings at boot from `platform/data/stores/rabbitmq-topology.json`, so an event should find its queue even before the consumer has started. If this fires, that file and the service disagree:
+
+```sh
+kubectl -n data exec rabbitmq-0 -- rabbitmqctl list_bindings source_name routing_key destination_name
+kubectl -n prod logs deploy/<producer> --tail=100 | grep -i unroutable
+```
+
+Find the routing key from the log in the bindings. A key that is missing means a new event or queue reached the service without the file: add it in a PR (the rule in [AGENTS.md](../../AGENTS.md)), and merging restarts the broker with it. To stop the alert before that, deploy the consumer: it declares its own queues and bindings when it starts.
 
 ### ServiceEventsDeadLettered
 
@@ -239,3 +246,43 @@ kubectl -n prod logs deploy/pay-api --tail=200 | grep -E 'unmatched|mismatch'
 ```
 
 Compare each with the payment in the provider's dashboard and settle it by hand.
+
+### PaymentsUnreconciled
+
+A paid payment has been missing from the ledger for over 30 minutes (critical): the buyer paid and has no coins. Reconciliation sends its event again every minute, so something is stopping it.
+
+```sh
+kubectl -n data exec pg-1 -c postgres -- psql -d pay -c \
+  "select id, user_id, coins, paid_at from payments where status = 'succeeded' and reconciled_at is null order by paid_at limit 20"
+kubectl -n prod logs deploy/pay-api --tail=200 | grep -i reconcil
+kubectl -n prod logs deploy/wallet-api --tail=200 | grep -iE 'payment|error'
+```
+
+Check in this order: wallet-api is up and its consumer is connected ([ServiceConsumerDown](#serviceconsumerdown)), the event did not end up in the dead-letter queue ([ServiceEventsDeadLettered](#serviceeventsdeadlettered)), and pay-api can reach wallet-api (`WALLET_API_URL`, `WALLET_INTERNAL_TOKEN`). Never post coins by hand: once the event gets through, the ledger's ref `pack:payment:<id>` makes it credit once.
+
+### PaymentEventsRepublished
+
+Reconciliation found a paid payment missing from the ledger past its 5 minutes of grace and sent its event again (warning). The coins came late, nothing is lost. Look for what delayed the first event: [OutboxEventsStuck](#outboxeventsstuck), [ServiceConsumerDown](#serviceconsumerdown) or a broker restart around that time.
+
+### PaymentProviderMismatch
+
+The provider's record of a pending payment shows another amount or currency (warning). The payment stays pending and no coins are credited; a later record does not pay it. It keeps firing while the payment is asked about, for up to 7 days.
+
+```sh
+kubectl -n data exec pg-1 -c postgres -- psql -d pay -c \
+  "select received_at, provider_payment_id, amount_minor, currency, payment_id from webhook_events where outcome = 'mismatch' and dedupe_key like 'sync:%' order by received_at desc limit 20"
+```
+
+Compare each with the payment in the provider's dashboard and settle it by hand.
+
+### PaymentWebhooksLost
+
+Provider sync paid more than one payment in 6 hours whose webhook never came (warning). The buyers have their coins, up to 10 minutes late or more. Check the webhook's address and secret at the provider, and that the webhook route answers: its failures show in Traefik's access log and in `payment_webhooks_total{result="rejected"}`.
+
+### PaymentProviderUnreachable
+
+Every lookup of provider sync has failed for 30 minutes (warning). Payments with a working webhook are not affected; one whose webhook is lost stays pending until the provider answers. Check the provider's status page and pay-api's log, `Provider lookup failed`. Nothing needs settling afterwards: later rounds ask again.
+
+### PaymentWebhooksDeferred
+
+For 30 minutes pay-api has answered 503 to webhooks that report a success without the money, because the provider's record does not show it yet or cannot be read (warning). The provider retries, so nothing is lost while it does. If the retries run out first, provider sync still finds the payment. Read `kubectl -n prod logs deploy/pay-api --tail=200 | grep -iE 'lookup|without the money'`.
