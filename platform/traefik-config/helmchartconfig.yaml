@@ -42,6 +42,11 @@ spec:
             - 2405:8100::/32
             - 2a06:98c0::/29
             - 2c0f:f248::/32
+            # K3s pod network: ServiceLB (svclb pods) hands Cloudflare's connections
+            # to Traefik from a pod address, so without it Traefik drops their
+            # X-Forwarded-For. Only Cloudflare passes the handshake (tls.yaml); the
+            # service network (10.43.0.0/16) is never a source.
+            - 10.42.0.0/16
     service:
       spec:
         # Keep the source address (a Cloudflare edge) instead of a node address.
