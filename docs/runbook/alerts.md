@@ -104,6 +104,50 @@ A failed liveness probe, a crash on start (bad config: the service validates its
 
 A container was killed at its memory limit (warning). Check `kubectl top pods` and the memory graph in Grafana: a leak grows steadily, a too-low limit is hit under normal load. Raise the limit in the service's `patches` only after the cause is clear.
 
+## Data
+
+The CNPG cluster `pg` in namespace `data` has one instance, `pg-1`; its backups go to R2 through the Barman Cloud plugin (`plugin-barman-cloud`, a sidecar of the pod). More in [postgres.md](postgres.md).
+
+### PostgresInstanceDown
+
+A Postgres instance has not answered, or its pod has not been Ready, for 5 minutes (critical). With one instance every api fails its requests on the database ([ServiceDatabaseErrors](#servicedatabaseerrors)) until it is back.
+
+```sh
+kubectl -n data get cluster pg
+kubectl -n data get pod pg-1 -o wide
+kubectl -n data describe pod pg-1 | sed -n '/Conditions/,$p'
+kubectl -n data logs pg-1 -c postgres --tail=100
+kubectl -n cnpg-system logs deploy/cnpg-cloudnative-pg --tail=100
+```
+
+Pending: the node lacks memory for the request, or the local-path volume is gone. Restarting: the log says why, often a full volume (`No space left on device`: WAL that could not be archived, see [PostgresWALArchivingFailing](#postgreswalarchivingfailing)), an OOM kill at the 1 GiB limit or a bad parameter in `postgres.yaml`. A recovery after a crash replays WAL first; the pod becomes Ready when it is done.
+
+### PostgresWALArchivingFailing
+
+WAL does not reach R2 (critical): the latest archive attempt failed, or WAL has waited in `pg_wal` for 15 minutes with nothing archived (a hung archiver). A restore can only reach the last archived segment, and `pg_wal` grows on the 10 GiB volume until Postgres stops.
+
+```sh
+kubectl -n data get cluster pg -o jsonpath='{.status.conditions[?(@.type=="ContinuousArchiving")]}{"\n"}'
+kubectl -n data exec pg-1 -c postgres -- psql -c 'select * from pg_stat_archiver'
+kubectl -n data logs pg-1 -c plugin-barman-cloud --tail=100
+kubectl -n data exec pg-1 -c postgres -- du -sh /var/lib/postgresql/data/pgdata/pg_wal
+```
+
+The plugin log has the R2 answer. Usual causes: the `pg-r2` key was revoked or lost access to `nl-pg-backups`, the endpoint in `pg-r2` is wrong, an R2 outage, or the sidecar was OOM killed (256 MiB limit in the ObjectStore `r2`). Postgres retries by itself; once a segment goes through, the backlog follows.
+
+### PostgresBackupTooOld
+
+No base backup has succeeded for 26 hours (warning): `pg-nightly` (03:00 UTC) failed or did not run. While WAL is archived a restore still works, from the previous base backup and with more WAL to replay.
+
+```sh
+kubectl -n data get scheduledbackup pg-nightly
+kubectl -n data get backups --sort-by=.metadata.creationTimestamp | tail -5
+kubectl -n data get backup <name> -o jsonpath='{.status.phase} {.status.error}{"\n"}'
+kubectl -n cnpg-system logs deploy/barman-cloud-plugin-barman-cloud --tail=100
+```
+
+The causes are those of [PostgresWALArchivingFailing](#postgreswalarchivingfailing), a cluster that was not healthy at 03:00, or the plugin itself down in `cnpg-system`. After the fix take a backup now ([postgres.md](postgres.md#backups)). The age comes from the plugin's `barman_cloud_cloudnative_pg_io_last_available_backup_timestamp`; the in-tree `cnpg_collector_last_available_backup_timestamp` stays 0 with the plugin.
+
 ## Services
 
 ### ServiceDatabaseErrors
@@ -145,3 +189,43 @@ A service has no Redis connection (warning). Its cache is bypassed (reads go to 
 ### RateLimitFailingOpen
 
 The rate limiter could not reach Redis and let requests through (warning). It follows [ServiceRedisDown](#serviceredisdown) or a Redis over its 500 ms budget; fix Redis.
+
+## Business
+
+Failures a user sees even though every service is up. Each counter comes from the service named in the alert.
+
+### AuthCodeDeliveryFailing
+
+id-api has failed to hand sign-in codes to notifications-api for 10 minutes (critical): users ask for a code and get none, so they cannot sign in. `auth_code_deliveries_total{result}` says how: `unreachable` (no answer or not 2xx: notifications-api is down, or the internal token of id-api, `NOTIFICATIONS_INTERNAL_TOKEN`, is not the one notifications-api expects), `failed` (notifications-api answered, but the mail provider refused the email or the code expired before sending).
+
+```sh
+kubectl -n prod logs deploy/id-api --tail=200 | grep 'Sign-in code delivery failed'
+kubectl -n prod get pods -l app.kubernetes.io/name=notifications-api
+kubectl -n prod logs deploy/notifications-api --tail=200
+```
+
+### EmailJobsFailed
+
+notifications-api gave up on emails of a template (`welcome`, `receipt`) in the last hour (warning): the job failed every retry, so the user did not get the email. The reason of the last attempt is in the `deliveries` table:
+
+```sh
+kubectl -n data exec pg-1 -c postgres -- psql -d notifications -c \
+  "select template, attempts, last_error, updated_at from deliveries where status = 'failed' order by updated_at desc limit 20"
+```
+
+Usually the mail provider: a revoked key, a quota, or a refused sender domain. Single bad addresses fail alone; many failures at once point at the provider or its credentials.
+
+### PaymentWebhooksUnmatched
+
+pay-api received provider webhooks it could not apply in the last 30 minutes (warning), by `result`:
+
+- `unmatched`: no payment has the provider's payment id yet. A webhook that came before its payment is applied by itself once the payment has the id; one that stays unapplied belongs to a payment pay-api never created.
+- `mismatch`: the amount or currency differs from the order. It is never applied, so the coins of that payment are not credited.
+
+```sh
+kubectl -n data exec pg-1 -c postgres -- psql -d pay -c \
+  "select received_at, provider, outcome, provider_payment_id, amount_minor, currency, applied_at from webhook_events where outcome in ('unmatched', 'mismatch') order by received_at desc limit 20"
+kubectl -n prod logs deploy/pay-api --tail=200 | grep -E 'unmatched|mismatch'
+```
+
+Compare each with the payment in the provider's dashboard and settle it by hand.

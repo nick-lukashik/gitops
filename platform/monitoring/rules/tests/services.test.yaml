@@ -162,3 +162,129 @@ tests:
               summary: prod/notes-api has no Redis connection
               description: The cache is bypassed and the rate limiter is open.
               runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#serviceredisdown
+
+  - name: the rate limiter counted with a key label still alerts once per service
+    interval: 1m
+    input_series:
+      - series: 'rate_limit_fail_open_total{namespace="prod",service="id-api",pod="id-api-1",key="login"}'
+        values: '0x5 1+1x10'
+      - series: 'rate_limit_fail_open_total{namespace="prod",service="id-api",pod="id-api-1",key="code"}'
+        values: '0x15'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: RateLimitFailingOpen
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: RateLimitFailingOpen
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              namespace: prod
+              service: id-api
+            exp_annotations:
+              summary: prod/id-api lets requests through without a rate limit
+              description: The rate limiter could not reach Redis and failed open.
+              runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#ratelimitfailingopen
+
+  - name: sign-in codes undelivered for 10 minutes; one lost code does not fire
+    interval: 1m
+    input_series:
+      - series: 'auth_code_deliveries_total{namespace="prod",service="id-api",pod="id-api-1",result="accepted"}'
+        values: '0+5x30'
+      # prod: notifications-api unreachable from 6m on.
+      - series: 'auth_code_deliveries_total{namespace="prod",service="id-api",pod="id-api-1",result="unreachable"}'
+        values: '0x5 1+1x25'
+      # staging: one code refused at 6m.
+      - series: 'auth_code_deliveries_total{namespace="staging",service="id-api",pod="id-api-1",result="failed"}'
+        values: '0x5 1x25'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: AuthCodeDeliveryFailing
+        exp_alerts: []
+      - eval_time: 17m
+        alertname: AuthCodeDeliveryFailing
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              namespace: prod
+              service: id-api
+            exp_annotations:
+              summary: prod/id-api does not deliver sign-in codes
+              description: Users get no sign-in code (notifications-api unreachable or not sending), so they cannot sign in.
+              runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#authcodedeliveryfailing
+
+  - name: an email job failed for good alerts at once, for an hour
+    interval: 1m
+    input_series:
+      - series: 'emails_failed_total{namespace="prod",service="notifications-api",pod="notifications-api-1",template="receipt"}'
+        values: '0x10 1x70'
+      - series: 'emails_failed_total{namespace="prod",service="notifications-api",pod="notifications-api-1",template="welcome"}'
+        values: '0x80'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: EmailJobsFailed
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: EmailJobsFailed
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              namespace: prod
+              service: notifications-api
+              template: receipt
+            exp_annotations:
+              summary: prod/notifications-api gave up on receipt emails
+              description: Email jobs failed every retry in the last hour; their users did not get them.
+              runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#emailjobsfailed
+      - eval_time: 75m
+        alertname: EmailJobsFailed
+        exp_alerts: []
+
+  - name: unmatched and mismatched payment webhooks alert at once; other results do not
+    interval: 1m
+    input_series:
+      - series: 'payment_webhooks_total{namespace="prod",service="pay-api",pod="pay-api-1",result="applied"}'
+        values: '0+3x40'
+      - series: 'payment_webhooks_total{namespace="prod",service="pay-api",pod="pay-api-1",result="rejected"}'
+        values: '0+1x40'
+      - series: 'payment_webhooks_total{namespace="prod",service="pay-api",pod="pay-api-1",result="unmatched"}'
+        values: '0x5 1x35'
+      - series: 'payment_webhooks_total{namespace="prod",service="pay-api",pod="pay-api-1",result="mismatch"}'
+        values: '0x20 1x20'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: PaymentWebhooksUnmatched
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: PaymentWebhooksUnmatched
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              namespace: prod
+              service: pay-api
+              result: unmatched
+            exp_annotations:
+              summary: prod/pay-api could not apply payment webhooks (unmatched)
+              description: A provider webhook matched no payment (unmatched) or not its amount or currency (mismatch); the money it reports is not credited yet.
+              runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#paymentwebhooksunmatched
+      - eval_time: 25m
+        alertname: PaymentWebhooksUnmatched
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              namespace: prod
+              service: pay-api
+              result: unmatched
+            exp_annotations:
+              summary: prod/pay-api could not apply payment webhooks (unmatched)
+              description: A provider webhook matched no payment (unmatched) or not its amount or currency (mismatch); the money it reports is not credited yet.
+              runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#paymentwebhooksunmatched
+          - exp_labels:
+              severity: warning
+              namespace: prod
+              service: pay-api
+              result: mismatch
+            exp_annotations:
+              summary: prod/pay-api could not apply payment webhooks (mismatch)
+              description: A provider webhook matched no payment (unmatched) or not its amount or currency (mismatch); the money it reports is not credited yet.
+              runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#paymentwebhooksunmatched

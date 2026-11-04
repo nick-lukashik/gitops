@@ -1,0 +1,63 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: data
+  namespace: monitoring
+spec:
+  groups:
+    # The CNPG cluster pg (platform/data/stores/postgres.yaml, docs/runbook/postgres.md):
+    # instance metrics from its PodMonitor, the pod state from kube-state-metrics.
+    - name: postgres
+      rules:
+        # Postgres does not answer the instance manager, or the pod is not Ready (also
+        # while Pending, before it has a Ready condition). CNPG pods are owned by their Cluster.
+        - alert: PostgresInstanceDown
+          expr: |
+            max by (namespace, pod) (cnpg_collector_up) == 0
+            or
+            (
+              max by (namespace, pod) (kube_pod_owner{owner_kind="Cluster"})
+              unless
+              max by (namespace, pod) (kube_pod_status_ready{condition="true"}) == 1
+            )
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Postgres {{ $labels.namespace }}/{{ $labels.pod }} is down or not ready"
+            description: Every api keeps its data there; their requests on the database fail until it is back.
+            runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#postgresinstancedown
+        # Failing: the latest attempt failed (the CNPG sample alert LastFailedArchiveTime).
+        # Postgres retries the segment until it is archived, so the failed count keeps
+        # growing meanwhile, while failures a retry fixes do not fire. Stuck: WAL waits in
+        # pg_wal and nothing was archived for 15 minutes, which also catches a hung
+        # archiver. An idle Postgres writes no WAL and archives nothing for hours, so the
+        # age alone means nothing; replicas never have WAL ready to archive.
+        - alert: PostgresWALArchivingFailing
+          expr: |
+            max by (namespace, pod) (cnpg_pg_stat_archiver_last_failed_time - cnpg_pg_stat_archiver_last_archived_time) > 0
+            or
+            (
+              max by (namespace, pod) (cnpg_pg_stat_archiver_seconds_since_last_archival) > 900
+              and
+              max by (namespace, pod) (cnpg_collector_pg_wal_archive_status{value="ready"}) > 0
+            )
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Postgres {{ $labels.namespace }}/{{ $labels.pod }} does not archive WAL"
+            description: WAL does not reach R2, so a restore stops at the last archived segment, and pg_wal grows until the volume is full.
+            runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#postgreswalarchivingfailing
+        # The Barman Cloud plugin reports backups under its own name; the in-tree
+        # cnpg_collector_last_available_backup_timestamp stays 0 with a plugin. pg-nightly
+        # runs at 03:00 UTC: a day plus 2 hours for the backup itself. No backup at all (0) fires too.
+        - alert: PostgresBackupTooOld
+          expr: time() - max by (namespace, pod) (barman_cloud_cloudnative_pg_io_last_available_backup_timestamp) > 26 * 3600
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Postgres {{ $labels.namespace }}/{{ $labels.pod }} has no base backup from the last 26 hours"
+            description: The last successful base backup is {{ $value | humanizeDuration }} old; the nightly backup failed or did not run.
+            runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#postgresbackuptooold
