@@ -51,13 +51,25 @@ spec:
             runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#postgreswalarchivingfailing
         # The Barman Cloud plugin reports backups under its own name; the in-tree
         # cnpg_collector_last_available_backup_timestamp stays 0 with a plugin. pg-nightly
-        # runs at 03:00 UTC: a day plus 2 hours for the backup itself. No backup at all (0) fires too.
+        # runs at 03:00 UTC: a day plus 2 hours for the backup itself. No backup at all (0)
+        # fires too, and so does a Postgres that is up while the plugin metric is gone.
+        # Every instance reports the cluster's last backup; the plugin metric has no cluster
+        # label, so it is taken from the pod name (CNPG names instances <cluster>-<n>).
         - alert: PostgresBackupTooOld
-          expr: time() - max by (namespace, pod) (barman_cloud_cloudnative_pg_io_last_available_backup_timestamp) > 26 * 3600
+          expr: |
+            time() - max by (namespace, cluster) (
+              label_replace(barman_cloud_cloudnative_pg_io_last_available_backup_timestamp, "cluster", "$1", "pod", "(.+)-[0-9]+")
+            ) > 26 * 3600
+            or
+            (
+              max by (namespace, cluster) (cnpg_collector_up) == 1
+              unless on (namespace, cluster)
+              label_replace(barman_cloud_cloudnative_pg_io_last_available_backup_timestamp, "cluster", "$1", "pod", "(.+)-[0-9]+")
+            )
           for: 15m
           labels:
             severity: warning
           annotations:
-            summary: "Postgres {{ $labels.namespace }}/{{ $labels.pod }} has no base backup from the last 26 hours"
-            description: The last successful base backup is {{ $value | humanizeDuration }} old; the nightly backup failed or did not run.
+            summary: "Postgres {{ $labels.namespace }}/{{ $labels.cluster }} has no base backup from the last 26 hours"
+            description: The nightly backup failed or did not run, or the Barman Cloud plugin reports no backup at all.
             runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#postgresbackuptooold

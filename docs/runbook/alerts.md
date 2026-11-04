@@ -137,16 +137,17 @@ The plugin log has the R2 answer. Usual causes: the `pg-r2` key was revoked or l
 
 ### PostgresBackupTooOld
 
-No base backup has succeeded for 26 hours (warning): `pg-nightly` (03:00 UTC) failed or did not run. While WAL is archived a restore still works, from the previous base backup and with more WAL to replay.
+No base backup of the cluster has succeeded for 26 hours (warning): `pg-nightly` (03:00 UTC) failed or did not run. It fires as well when Postgres is up but the Barman Cloud plugin reports no backup at all, so the age is unknown. While WAL is archived a restore still works, from the previous base backup and with more WAL to replay.
 
 ```sh
 kubectl -n data get scheduledbackup pg-nightly
 kubectl -n data get backups --sort-by=.metadata.creationTimestamp | tail -5
 kubectl -n data get backup <name> -o jsonpath='{.status.phase} {.status.error}{"\n"}'
 kubectl -n cnpg-system logs deploy/barman-cloud-plugin-barman-cloud --tail=100
+kubectl -n data logs pg-1 -c plugin-barman-cloud --tail=100
 ```
 
-The causes are those of [PostgresWALArchivingFailing](#postgreswalarchivingfailing), a cluster that was not healthy at 03:00, or the plugin itself down in `cnpg-system`. After the fix take a backup now ([postgres.md](postgres.md#backups)). The age comes from the plugin's `barman_cloud_cloudnative_pg_io_last_available_backup_timestamp`; the in-tree `cnpg_collector_last_available_backup_timestamp` stays 0 with the plugin.
+The causes are those of [PostgresWALArchivingFailing](#postgreswalarchivingfailing), a cluster that was not healthy at 03:00, or the plugin itself down in `cnpg-system`. After the fix take a backup now ([postgres.md](postgres.md#backups)). The age comes from the plugin's `barman_cloud_cloudnative_pg_io_last_available_backup_timestamp`, which every instance reports for its cluster; the in-tree `cnpg_collector_last_available_backup_timestamp` stays 0 with the plugin. If the backups are recent, the metric is missing: the `plugin-barman-cloud` sidecar of the pod is not running or fails to answer the instance manager.
 
 ## Services
 
@@ -184,11 +185,11 @@ Events of a queue failed every retry, or were invalid, and moved to `<queue>.dlq
 
 ### ServiceRedisDown
 
-A service has no Redis connection (warning). Its cache is bypassed (reads go to Postgres) and its rate limiter lets requests through. It reconnects by itself; check the Redis pod.
+A service has no Redis connection (warning). Its cache is bypassed (reads go to Postgres) and its rate limits are not checked ([RateLimitFailingOpen](#ratelimitfailingopen)). It reconnects by itself; check the Redis pod.
 
 ### RateLimitFailingOpen
 
-The rate limiter could not reach Redis and let requests through (warning). It follows [ServiceRedisDown](#serviceredisdown) or a Redis over its 500 ms budget; fix Redis.
+Requests got no rate-limit check because Redis was down or over its 500 ms budget (warning). What happened to them depends on the limiter: the throttler of every api let them through (log `Rate limiter unavailable, allowing requests`), id-api's sign-in limits refused them with 503 (log `Rate limiter unavailable, refusing`), so nobody can sign in meanwhile. It follows [ServiceRedisDown](#serviceredisdown) or a slow Redis; fix Redis.
 
 ## Business
 

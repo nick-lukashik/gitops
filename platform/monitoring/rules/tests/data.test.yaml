@@ -143,13 +143,15 @@ tests:
               description: WAL does not reach R2, so a restore stops at the last archived segment, and pg_wal grows until the volume is full.
               runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#postgreswalarchivingfailing
 
-  - name: last base backup older than 26 hours; a nightly one does not fire
+  - name: last base backup older than 26 hours, once per cluster; a nightly one does not fire
     interval: 1m
     input_series:
-      # time() is 0 at the start of the test. data/pg-1: the last backup at 1h.
+      # time() is 0 at the start of the test. data/pg: the last backup at 1h, seen by both instances.
       - series: 'barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{namespace="data",pod="pg-1"}'
         values: '3600x1700'
-      # staging/pg-1: backups at 1h and 24h.
+      - series: 'barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{namespace="data",pod="pg-2"}'
+        values: '3600x1700'
+      # staging/pg: backups at 1h and 24h.
       - series: 'barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{namespace="staging",pod="pg-1"}'
         values: '3600x1440 86400x260'
     alert_rule_test:
@@ -162,8 +164,38 @@ tests:
           - exp_labels:
               severity: warning
               namespace: data
-              pod: pg-1
+              cluster: pg
             exp_annotations:
-              summary: Postgres data/pg-1 has no base backup from the last 26 hours
-              description: The last successful base backup is 1d 2h 30m 0s old; the nightly backup failed or did not run.
+              summary: Postgres data/pg has no base backup from the last 26 hours
+              description: The nightly backup failed or did not run, or the Barman Cloud plugin reports no backup at all.
+              runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#postgresbackuptooold
+
+  - name: the plugin stops reporting backups while Postgres is up; a Postgres down does not fire
+    interval: 1m
+    input_series:
+      # data/pg: up, the plugin metric is gone from 11m.
+      - series: 'cnpg_collector_up{namespace="data",pod="pg-1",cluster="pg",job="data/pg"}'
+        values: '1x40'
+      - series: 'barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{namespace="data",pod="pg-1"}'
+        values: '-3600x10 stale'
+      # staging/pg: Postgres does not answer (PostgresInstanceDown) and reports no backup.
+      - series: 'cnpg_collector_up{namespace="staging",pod="pg-1",cluster="pg",job="staging/pg"}'
+        values: '0x40'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: PostgresBackupTooOld
+        exp_alerts: []
+      - eval_time: 24m
+        alertname: PostgresBackupTooOld
+        exp_alerts: []
+      - eval_time: 27m
+        alertname: PostgresBackupTooOld
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              namespace: data
+              cluster: pg
+            exp_annotations:
+              summary: Postgres data/pg has no base backup from the last 26 hours
+              description: The nightly backup failed or did not run, or the Barman Cloud plugin reports no backup at all.
               runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#postgresbackuptooold
