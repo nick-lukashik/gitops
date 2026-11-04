@@ -5,4 +5,5 @@ resources:
   - node.yaml
   - workloads.yaml
   - platform.yaml
+  - data.yaml
   - services.yaml
