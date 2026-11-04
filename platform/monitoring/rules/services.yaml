@@ -71,13 +71,53 @@ spec:
             severity: warning
           annotations:
             summary: "{{ $labels.namespace }}/{{ $labels.service }} has no Redis connection"
-            description: The cache is bypassed and the rate limiter is open.
+            description: The cache is bypassed and rate limits are not checked.
             runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#serviceredisdown
+        # Counts requests that got no rate-limit check: the throttler of every api lets
+        # them through, id-api's sign-in limits (RateLimiter) refuse them with 503.
         - alert: RateLimitFailingOpen
           expr: sum by (namespace, service) (increase(rate_limit_fail_open_total[10m])) > 0
           labels:
             severity: warning
           annotations:
-            summary: "{{ $labels.namespace }}/{{ $labels.service }} lets requests through without a rate limit"
-            description: The rate limiter could not reach Redis and failed open.
+            summary: "{{ $labels.namespace }}/{{ $labels.service }} cannot check rate limits"
+            description: "Redis is down or over its budget: the throttler lets requests through, id-api's sign-in limits refuse them (503)."
             runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#ratelimitfailingopen
+    # Business flows: a user who did not get what they asked for. The counters come
+    # from id-api, notifications-api and pay-api, with the same labels as above.
+    - name: business
+      rules:
+        # result failed (notifications-api answered but did not send it) or unreachable (no
+        # answer, not 2xx). Over 10 minutes, so one lost code (the user asks again) does not fire.
+        - alert: AuthCodeDeliveryFailing
+          expr: sum by (namespace, service) (rate(auth_code_deliveries_total{result!="accepted"}[10m])) > 0
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "{{ $labels.namespace }}/{{ $labels.service }} does not deliver sign-in codes"
+            description: Users get no sign-in code (notifications-api unreachable or not sending), so they cannot sign in.
+            runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#authcodedeliveryfailing
+        # No `for`: a job is counted only after its last retry, so every one is an email lost.
+        # The counter is not pre-initialized: a pod's series appears with its first failure,
+        # already at 1, which increase() cannot see; a series new within the hour counts too.
+        - alert: EmailJobsFailed
+          expr: |
+            sum by (namespace, service, template) (increase(emails_failed_total[1h])) > 0
+            or
+            sum by (namespace, service, template) (emails_failed_total unless emails_failed_total offset 1h) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.namespace }}/{{ $labels.service }} gave up on {{ $labels.template }} emails"
+            description: Email jobs failed every retry in the last hour; their users did not get them.
+            runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#emailjobsfailed
+        # No `for`: each one is a payment someone has to look at.
+        - alert: PaymentWebhooksUnmatched
+          expr: sum by (namespace, service, result) (increase(payment_webhooks_total{result=~"unmatched|mismatch"}[30m])) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.namespace }}/{{ $labels.service }} could not apply payment webhooks ({{ $labels.result }})"
+            description: A provider webhook matched no payment (unmatched) or not its amount or currency (mismatch); the money it reports is not credited yet.
+            runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#paymentwebhooksunmatched
