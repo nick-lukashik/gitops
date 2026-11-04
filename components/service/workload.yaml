@@ -219,6 +219,8 @@ spec:
 # At least two replicas, so a rollout, a crash or an eviction never leaves the
 # service without a ready pod; up to four while CPU stays above 75% of the
 # request. Every service is stateless for this (service contract, "Replicas").
+# Wave 2, after its Deployment (wave 1): an HPA without its target is Degraded,
+# and Argo CD would stop the first sync of a new service at that wave.
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
@@ -226,6 +228,8 @@ metadata:
   labels:
     app.kubernetes.io/name: SERVICE
     app.kubernetes.io/part-of: nick-lukashik
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
