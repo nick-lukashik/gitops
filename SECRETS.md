@@ -7,7 +7,7 @@ Only SealedSecrets are in git; the repo is public, and a sealed value is safe th
 | Secret | Namespace | Keys | Bitwarden | Created by | Used by |
 |---|---|---|---|---|---|
 | `sealed-secrets-key` | `kube-system` | `tls.crt`, `tls.key` | `sealed-secrets-key`, `sealed-secrets-crt` | `bootstrap/install.sh` | key of the Sealed Secrets controller |
-| `cf-dns01-token` | `cert-manager` | `api-token` | `cf-dns01-token` | kubeseal | ClusterIssuers `letsencrypt-staging`, `letsencrypt` |
+| `cf-dns01-token` | `cert-manager` | `api-token` | `cf-dns01-token` | kubeseal | ClusterIssuer `letsencrypt` |
 | `argocd-notifications-secret` | `argocd` | `telegram-token` | `ops-telegram` | kubeseal | Argo CD Notifications, service `telegram` |
 | `ops-telegram` | `monitoring` | `token` | `ops-telegram` | kubeseal | Alertmanager, receiver `telegram` |
 | `hc-watchdog` | `monitoring` | `url` | `hc-watchdog` | kubeseal | Alertmanager, receiver `healthchecks` (Watchdog) |
@@ -40,9 +40,11 @@ openssl x509 -in "$CRT" -noout -subject -enddate
 
 ## Commands
 
-`cf-dns01-token`:
+`cf-dns01-token`, checked at Cloudflare first (the token must be active):
 
 ```sh
+"$S" get cf-dns01-token | tr -d '\n' | { read -r t; printf 'header = "Authorization: Bearer %s"\n' "$t"; } |
+  curl -s --config - https://api.cloudflare.com/client/v4/user/tokens/verify | jq -r .result.status   # active
 "$S" get cf-dns01-token | tr -d '\n' |
   kubectl create secret generic cf-dns01-token -n cert-manager --from-file=api-token=/dev/stdin --dry-run=client -o yaml |
   kubeseal --cert "$CRT" --format yaml >platform/cert-manager/config/cf-dns01-token.sealedsecret.yaml
