@@ -18,10 +18,10 @@ spec:
         releaseName: cert-manager
         valueFiles:
           - $values/platform/cert-manager/values.yaml
-    - repoURL: git@github.com:nick-lukashik/gitops.git
+    - repoURL: https://github.com/nick-lukashik/gitops.git
       targetRevision: master
       ref: values
-    - repoURL: git@github.com:nick-lukashik/gitops.git
+    - repoURL: https://github.com/nick-lukashik/gitops.git
       targetRevision: master
       path: platform/cert-manager/config
   syncPolicy:

@@ -21,10 +21,10 @@ spec:
         valueFiles:
           - $values/components/settings/settings.yaml
           - $values/platform/argocd/values.yaml
-    - repoURL: git@github.com:nick-lukashik/gitops.git
+    - repoURL: https://github.com/nick-lukashik/gitops.git
       targetRevision: master
       ref: values
-    - repoURL: git@github.com:nick-lukashik/gitops.git
+    - repoURL: https://github.com/nick-lukashik/gitops.git
       targetRevision: master
       path: platform/argocd/config
   syncPolicy:

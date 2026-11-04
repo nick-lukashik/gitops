@@ -3,7 +3,7 @@
 # shellcheck source=lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-shellcheck -x bootstrap/install.sh bootstrap/repo-credentials.sh scripts/*.sh || fail "shellcheck"
+shellcheck -x bootstrap/install.sh scripts/*.sh || fail "shellcheck"
 echo "ok   shellcheck"
 actionlint -color=false .github/workflows/*.yml || fail "actionlint"
 echo "ok   actionlint"

@@ -19,10 +19,10 @@ spec:
         valueFiles:
           - $values/components/settings/settings.yaml
           - $values/platform/monitoring/kube-prometheus-stack/values.yaml
-    - repoURL: git@github.com:nick-lukashik/gitops.git
+    - repoURL: https://github.com/nick-lukashik/gitops.git
       targetRevision: master
       ref: values
-    - repoURL: git@github.com:nick-lukashik/gitops.git
+    - repoURL: https://github.com/nick-lukashik/gitops.git
       targetRevision: master
       path: platform/monitoring/kube-prometheus-stack/config
   syncPolicy:
