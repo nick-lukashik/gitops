@@ -1,0 +1,46 @@
+# Identity: users, sign-in (email code, Google, passkeys), sessions, tokens (repo id-api).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: prod
+resources:
+  - service.yaml
+  - id-api-secrets.sealedsecret.yaml
+components:
+  # No public route: only the platform's pods call it.
+  - ../../../components/service
+  - ../../../components/api
+  - ../../../components/internal
+# Non-secret runtime env of the pods and the migrate Job (envFrom). Everything
+# else has the production value as its default in the service.
+configMapGenerator:
+  - name: id-api-config
+    literals:
+      - LOG_LEVEL=info
+      # 4 replicas x 5 connections per api at most (docs/runbook/postgres.md).
+      - DATABASE_POOL_MAX=5
+      # id-web forwards the client address (rate limits, sessions list).
+      - TRUST_PROXY_HOPS=1
+# Images only by digest. The first digest and source-sha are set by hand from
+# the summary of job "image" of id-api; then the deploy PR keeps them current.
+images:
+  - name: ghcr.io/nick-lukashik/id-api
+    digest: sha256:ed9b4b831f0f1ac0a9b2e26802d3dd521fbddf385345bfe4617b433f7b9e61a1
+commonAnnotations:
+  nick-lukashik.com/source-sha: "878da92d9b7fb1a6f3107c66c034cdd9c266d0db"
+  nick-lukashik.com/source-repo: nick-lukashik/id-api
+patches:
+  # It calls other apis (JWKS of id-api at least): the one label for both
+  # directions of api calls (platform/policies/prod.yaml, components/api).
+  - target:
+      kind: Deployment
+      labelSelector: app.kubernetes.io/component=server
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: any
+      spec:
+        template:
+          metadata:
+            labels:
+              nick-lukashik.com/api-client: "true"

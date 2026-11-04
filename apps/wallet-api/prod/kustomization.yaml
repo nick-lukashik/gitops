@@ -1,0 +1,44 @@
+# The coin wallet and its ledger (repo wallet-api).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: prod
+resources:
+  - service.yaml
+  - wallet-api-secrets.sealedsecret.yaml
+components:
+  # No public route: only the platform's pods call it.
+  - ../../../components/service
+  - ../../../components/api
+  - ../../../components/internal
+# Non-secret runtime env of the pods and the migrate Job (envFrom). Everything
+# else has the production value as its default in the service.
+configMapGenerator:
+  - name: wallet-api-config
+    literals:
+      - LOG_LEVEL=info
+      # 4 replicas x 5 connections per api at most (docs/runbook/postgres.md).
+      - DATABASE_POOL_MAX=5
+# Images only by digest. The first digest and source-sha are set by hand from
+# the summary of job "image" of wallet-api; then the deploy PR keeps them current.
+images:
+  - name: ghcr.io/nick-lukashik/wallet-api
+    digest: sha256:64f70ae5b457c651c4f56c805665df03aa5dceac68bf5535339a1b7acaa3823f
+commonAnnotations:
+  nick-lukashik.com/source-sha: "f3064e46f49f8708db30a2fa7eb085d9dc024f6c"
+  nick-lukashik.com/source-repo: nick-lukashik/wallet-api
+patches:
+  # It calls other apis (JWKS of id-api at least): the one label for both
+  # directions of api calls (platform/policies/prod.yaml, components/api).
+  - target:
+      kind: Deployment
+      labelSelector: app.kubernetes.io/component=server
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: any
+      spec:
+        template:
+          metadata:
+            labels:
+              nick-lukashik.com/api-client: "true"

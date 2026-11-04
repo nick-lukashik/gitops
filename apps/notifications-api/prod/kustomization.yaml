@@ -1,0 +1,68 @@
+# Email through Resend and the in-app inbox (repo notifications-api).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: prod
+resources:
+  - service.yaml
+  - notifications-api-secrets.sealedsecret.yaml
+components:
+  # No public route: only the platform's pods call it.
+  - ../../../components/service
+  - ../../../components/api
+  - ../../../components/internal
+# Non-secret runtime env of the pods and the migrate Job (envFrom). Everything
+# else has the production value as its default in the service.
+configMapGenerator:
+  - name: notifications-api-config
+    literals:
+      - LOG_LEVEL=info
+      # 4 replicas x 5 connections per api at most (docs/runbook/postgres.md).
+      - DATABASE_POOL_MAX=5
+      - MAIL_TRANSPORT=smtp
+# Images only by digest. The first digest and source-sha are set by hand from
+# the summary of job "image" of notifications-api; then the deploy PR keeps them current.
+images:
+  - name: ghcr.io/nick-lukashik/notifications-api
+    digest: sha256:9f7fa86e2405ae61ebb5b972fb871cf75a6c7f10ba64a9cb0263fea04819118b
+commonAnnotations:
+  nick-lukashik.com/source-sha: "c2bcf9f9841ded809a9c9660a18bb34f66ba2027"
+  nick-lukashik.com/source-repo: nick-lukashik/notifications-api
+patches:
+  # It calls other apis (JWKS of id-api at least): the one label for both
+  # directions of api calls (platform/policies/prod.yaml, components/api).
+  - target:
+      kind: Deployment
+      labelSelector: app.kubernetes.io/component=server
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: any
+      spec:
+        template:
+          metadata:
+            labels:
+              nick-lukashik.com/api-client: "true"
+  # SMTP to Resend (smtps, port 465) next to public HTTPS (components/api):
+  # the same public addresses, the one more port.
+  - target:
+      kind: NetworkPolicy
+      labelSelector: app.kubernetes.io/component=server
+    patch: |-
+      - op: add
+        path: /spec/egress/-
+        value:
+          to:
+            - ipBlock:
+                cidr: 0.0.0.0/0
+                except:
+                  - 0.0.0.0/8
+                  - 10.0.0.0/8
+                  - 100.64.0.0/10
+                  - 127.0.0.0/8
+                  - 169.254.0.0/16
+                  - 172.16.0.0/12
+                  - 192.168.0.0/16
+          ports:
+            - port: 465
+              protocol: TCP

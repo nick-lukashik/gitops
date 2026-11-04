@@ -1,0 +1,48 @@
+# The account site on id.<domain> (repo id-web): sign-in, account, wallet,
+# payments, notifications, and sign-in and sign-out for the other sites.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: prod
+resources:
+  - service.yaml
+  - id-web-secrets.sealedsecret.yaml
+components:
+  - ../../../components/service
+  - ../../../components/web
+  - ../../../components/subdomain
+# Non-secret runtime env of the pods (envFrom). The api URLs and
+# FORM_ACTION_ORIGINS have the production values as defaults in id-web.
+configMapGenerator:
+  - name: id-web-config
+    literals:
+      - LOG_LEVEL=info
+      - ROBOTS=index
+      # Filled from the route below: the domain lives only in components/settings.
+      - SITE_URL=https://HOST
+images:
+  - name: ghcr.io/nick-lukashik/id-web
+    digest: sha256:fea87621aaf56e7d585c642ac6630ef0269186e1513383b1d8a9f2fa1bb9d1a9
+commonAnnotations:
+  nick-lukashik.com/source-sha: "2d32e0ae905fe6469f4779c6eec2f46d9d8f07bb"
+  nick-lukashik.com/source-repo: nick-lukashik/id-web
+replacements:
+  # SITE_URL=https://<host of the IngressRoute>.
+  - source:
+      kind: IngressRoute
+      fieldPath: metadata.annotations.nl-gitops/host
+    targets:
+      - select:
+          kind: ConfigMap
+          name: id-web-config
+        fieldPaths:
+          - data.SITE_URL
+        options:
+          delimiter: //
+          index: 1
+patches:
+  - target:
+      kind: IngressRoute
+    patch: |-
+      - op: replace
+        path: /metadata/annotations/nl-gitops~1smoke-paths
+        value: /login

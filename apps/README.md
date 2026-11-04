@@ -7,6 +7,8 @@ Services. Every folder `apps/<service>/prod` becomes Application `<service>-prod
 | `_example-web/prod` | template of a web service (Next.js). Built and checked in CI, never deployed (`apps/_*` is excluded) |
 | `_example-api/prod` | template of an api service (NestJS), same |
 | `landing-web/prod` | the site on the root domain (repo `landing-web`, from `next-starter`) |
+| `id-web/prod` | the account site on `id.<domain>` (repo `id-web`) |
+| `id-api/prod`, `notifications-api/prod`, `wallet-api/prod` | the account services, internal: no route (`components/internal`), reached by id-web and each other |
 
 ## A service folder
 
@@ -25,7 +27,7 @@ apps/<service>/prod/
 |---|---|
 | `namespace: prod` | always |
 | `resources` | `service.yaml`, the SealedSecret if any |
-| `components` | `../../../components/service`, then `../../../components/web` or `../../../components/api`, then `../../../components/subdomain` unless the service is on the root domain |
+| `components` | `../../../components/service`, then `../../../components/web` or `../../../components/api`, then `../../../components/subdomain` unless the service is on the root domain, or `../../../components/internal` for an api without a route |
 | `configMapGenerator` | `<service>-config`: non-secret env, `KEY=value` literals. The name hash rolls the pods on every change |
 | `images` | one entry `name: ghcr.io/nick-lukashik/<service>` + `digest: sha256:…`; no `newName`, no `newTag` |
 | `commonAnnotations` | `nick-lukashik.com/source-sha` and `nick-lukashik.com/source-repo`: the deploy PR updates them |

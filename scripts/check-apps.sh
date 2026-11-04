@@ -2,7 +2,8 @@
 # Service folders follow the runtime contract (apps/README.md). For every
 # apps/<app>/prod except the third-party apps below:
 # - components: components/service first, then exactly one of components/api or
-#   components/web, optionally components/subdomain, nothing else;
+#   components/web, optionally components/subdomain, or components/internal for an
+#   api without a route, nothing else;
 # - images: one entry ghcr.io/nick-lukashik/<name> with a digest, no newName or
 #   newTag; commonAnnotations source-sha and source-repo (deploy PR convention);
 # - the build: Deployment <name> on that image (no replicas: a HorizontalPodAutoscaler
@@ -70,6 +71,7 @@ for file in apps/*/prod/kustomization.yaml; do
   ' "/repo/$file")
 
   kind=""
+  internal=0
   first=1
   for c in $components; do
     if [[ $first == 1 ]]; then
@@ -83,11 +85,16 @@ for file in apps/*/prod/kustomization.yaml; do
         kind=${c##*/}
         ;;
       "$C/subdomain") ;;
-      *) errors+=("unexpected component $c (after service: api or web, and subdomain)") ;;
+      "$C/internal") internal=1 ;;
+      *) errors+=("unexpected component $c (after service: api or web, and subdomain or internal)") ;;
     esac
   done
   [[ $first == 0 ]] || errors+=("components must start with $C/service")
   [[ -n $kind ]] || errors+=("needs exactly one of $C/api or $C/web")
+  if [[ $internal == 1 ]]; then
+    [[ $kind == api ]] || errors+=("$C/internal is for an api")
+    [[ " $components " != *" $C/subdomain "* ]] || errors+=("$C/internal has no host: drop $C/subdomain")
+  fi
 
   [[ $images == 1 ]] || errors+=("images: expected one entry, found $images")
   [[ $image_name == "$REGISTRY/$name" ]] || errors+=("images[0].name must be $REGISTRY/$name, got '$image_name'")
@@ -138,7 +145,7 @@ for file in apps/*/prod/kustomization.yaml; do
   ' "$(rel "$rendered")")
 
   smoke_paths=$(yq -N 'select(.kind == "IngressRoute") | .metadata.annotations["nl-gitops/smoke-paths"] // ""' "$(rel "$rendered")")
-  [[ -n $smoke_paths ]] || errors+=("build: nl-gitops/smoke-paths must list read-only HTTP paths")
+  [[ -n $smoke_paths || $internal == 1 ]] || errors+=("build: nl-gitops/smoke-paths must list read-only HTTP paths")
   for smoke_path in $smoke_paths; do
     [[ $smoke_path == /* && $smoke_path != //* ]] || errors+=("build: invalid smoke path '$smoke_path'")
   done
@@ -154,13 +161,18 @@ for file in apps/*/prod/kustomization.yaml; do
     errors+=("build: image must be $REGISTRY/$name@sha256:<digest>, got '$image'")
   [[ $config_ref == "$name"-config-* && $configmaps == *" $config_ref "* ]] ||
     errors+=("build: envFrom needs ConfigMap $name-config from a configMapGenerator, got '$config_ref'")
-  [[ $host =~ ^[a-z0-9.-]+\.[a-z]+$ && $match == "Host(\`$host\`)" ]] ||
-    errors+=("build: one IngressRoute whose nl-gitops/host annotation is its Host(), got '$host' / '$match'")
-  [[ " $middlewares " == *" real-ip@file "* ]] ||
-    errors+=("build: the IngressRoute needs middleware real-ip@file, got '$middlewares'")
+  if [[ $internal == 1 ]]; then
+    [[ -z $host ]] || errors+=("build: an internal api has no IngressRoute, got '$host'")
+  else
+    [[ $host =~ ^[a-z0-9.-]+\.[a-z]+$ && $match == "Host(\`$host\`)" ]] ||
+      errors+=("build: one IngressRoute whose nl-gitops/host annotation is its Host(), got '$host' / '$match'")
+    [[ " $middlewares " == *" real-ip@file "* ]] ||
+      errors+=("build: the IngressRoute needs middleware real-ip@file, got '$middlewares'")
+  fi
   # body-limit (Traefik buffering) on api routes only: it also buffers whole
   # responses, which would break streamed HTML on web routes.
-  if [[ $kind == api ]]; then
+  if [[ $internal == 1 ]]; then :
+  elif [[ $kind == api ]]; then
     [[ " $middlewares " == *" body-limit@file "* ]] || errors+=("build: an api IngressRoute needs body-limit@file, got '$middlewares'")
   else
     [[ " $middlewares " != *" body-limit@file "* ]] || errors+=("build: a web IngressRoute must not use body-limit@file (it buffers responses)")
@@ -182,7 +194,8 @@ for file in apps/*/prod/kustomization.yaml; do
     done
     status=1
   else
-    echo "ok   apps/$app/prod: $kind $name, https://$host"
+    if [[ $internal == 1 ]]; then echo "ok   apps/$app/prod: $kind $name, internal (no route)"
+    else echo "ok   apps/$app/prod: $kind $name, https://$host"; fi
   fi
 done
 exit "$status"
