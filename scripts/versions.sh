@@ -4,7 +4,8 @@
 # deploy annotations are matched by suffix (/source-sha, /source-repo): the
 # domain is written only in components/settings.
 #   scripts/versions.sh         a table: service, source repo, source sha, digest
-#   scripts/versions.sh --env   <SERVICE>_IMAGE=<image>@<digest> lines (e2e/compose.yaml)
+#   scripts/versions.sh --env   <SERVICE>_IMAGE=<image>@<digest> lines (e2e/compose.yaml);
+#                               apps with no source-sha (third-party) are left out
 # shellcheck source=lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
@@ -33,8 +34,10 @@ rows=$(yq -N -r '[
 ] | @tsv' "${files[@]}")
 
 if [[ $format == env ]]; then
-  while IFS=$'\t' read -r service _ _ image digest; do
-    [[ $image != - && $digest != - ]] || fail "apps/$service/prod: no image digest"
+  while IFS=$'\t' read -r service _ sha image digest; do
+    # The rule of smoke.yml: no deploy annotation, not one of our services.
+    [[ $sha != - ]] || continue
+    [[ $image != - && $digest != - ]] || fail "apps/$service/prod: source-sha but no image digest"
     printf '%s_IMAGE=%s@%s\n' "$(tr 'a-z-' 'A-Z_' <<<"$service")" "$image" "$digest"
   done <<<"$rows"
   exit 0

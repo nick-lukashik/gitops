@@ -1,0 +1,58 @@
+# On top of compose.yaml for the failure scenarios (README.md, tests/failure/).
+# tests/stack.ts names both files in COMPOSE_FILE of .env.
+
+services:
+  # A stopped store comes back with its data, as in the cluster, where each has
+  # a volume (platform/data/stores). A recreated stack still starts empty:
+  # tests/stack.ts removes these volumes with the stack.
+  postgres:
+    tmpfs: !reset []
+    volumes:
+      - postgres-data:/var/lib/postgresql
+
+  redis:
+    command: [redis-server, --requirepass, "${REDIS_PASSWORD:?}", --appendonly, "yes", --appendfsync, everysec, --dir, /data]
+    volumes:
+      - redis-data:/data
+
+  rabbitmq:
+    tmpfs: !reset []
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+
+  # Shorter than prod's 300 s: a token is past id-web's refresh threshold (60 s
+  # left) ten seconds after it was issued, and it ends within a scenario. Not 60:
+  # every request would refresh, so a page's prefetches rotate the token again
+  # and again while earlier ones are under way, which prod's 300 s never does.
+  # Keep it equal to ACCESS_TTL_MS in tests/failure/harness.ts.
+  id-api:
+    environment:
+      ACCESS_TOKEN_TTL_SECONDS: 70
+
+  # The second replicas, as separate services on a port of their own: the
+  # scenario chooses which replica takes each step, so a step that crosses
+  # replicas always does. id-web-2 calls id-api-2 only; everything else calls
+  # the first id-api. Same secrets and stores as the first ones.
+  id-api-2:
+    extends:
+      file: compose.yaml
+      service: id-api
+    environment:
+      ACCESS_TOKEN_TTL_SECONDS: 70
+
+  id-web-2:
+    extends:
+      file: compose.yaml
+      service: id-web
+    environment:
+      ID_API_URL: http://id-api-2:3000
+    ports: !override
+      - 127.0.0.1:${E2E_WEB_2_PORT:-3902}:3000
+    depends_on:
+      id-api-2:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
+  redis-data:
+  rabbitmq-data:

@@ -1,19 +1,30 @@
 import { execFileSync } from 'node:child_process'
 import { generateKeyPairSync, randomBytes } from 'node:crypto'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
+import { parseEnv } from 'node:util'
+
+/** The failure scenarios (failure/) with ../compose.failure.yaml on top, not the deploy-PR suite. */
+export const FAILURE_SUITE = process.env.E2E_SUITE === 'failure'
+
+/**
+ * Project name and host ports: the environment or today's defaults, so runs
+ * from two worktrees can be up at once. They reach compose through ../.env.
+ */
+const place = {
+    COMPOSE_PROJECT_NAME: process.env.COMPOSE_PROJECT_NAME || 'nl-e2e',
+    E2E_WEB_PORT: process.env.E2E_WEB_PORT || '3900',
+    E2E_MAILPIT_PORT: process.env.E2E_MAILPIT_PORT || '3901',
+    E2E_WEB_2_PORT: process.env.E2E_WEB_2_PORT || '3902',
+}
 
 /** id-web and Mailpit's API on the host: the ports of ../compose.yaml. */
-export const WEB_URL = 'http://localhost:3900'
-export const MAILPIT_URL = 'http://127.0.0.1:3901'
+export const WEB_URL = `http://localhost:${place.E2E_WEB_PORT}`
+export const MAILPIT_URL = `http://127.0.0.1:${place.E2E_MAILPIT_PORT}`
+/** The second id-web of ../compose.failure.yaml. Cookies ignore the port: a browser's session is on both. */
+export const WEB_2_URL = `http://localhost:${place.E2E_WEB_2_PORT}`
 
-/** Set for the test workers when pay-api is part of the stack. */
-export const PAY_API_ENV = 'E2E_PAY_API'
-export const NO_PAY_API =
-    'pay-api is not in the stack: no apps/pay-api/prod in the deployed set and no PAY_API_IMAGE '
-    + '(e.g. PAY_API_IMAGE=ghcr.io/nick-lukashik/pay-api:sha-<commit>)'
-
-const E2E = path.resolve(import.meta.dirname, '..')
+export const E2E = path.resolve(import.meta.dirname, '..')
 const REPO = path.resolve(E2E, '..')
 const OUTPUT = path.join(import.meta.dirname, 'test-results')
 
@@ -57,8 +68,9 @@ function saveLogs() {
 
 /**
  * The deployed set: `<SERVICE>_IMAGE=<image>@<digest>` of every
- * apps/<service>/prod. The same variable in the environment replaces one
- * (a candidate image); an empty one counts as unset.
+ * apps/<service>/prod, and the pin of ../pay-api.env until pay-api is in it.
+ * The same variable in the environment replaces one (a candidate image); an
+ * empty one counts as unset.
  */
 function images(): Record<string, string> {
     const deployed = execFileSync(path.join(REPO, 'scripts/versions.sh'), [
@@ -71,11 +83,11 @@ function images(): Record<string, string> {
             line.slice(0, line.indexOf('=')),
             line.slice(line.indexOf('=') + 1),
         ])
-    const result: Record<string, string> = Object.fromEntries(deployed)
-    for (const key of [
-        ...Object.keys(result),
-        'PAY_API_IMAGE',
-    ]) {
+    const result: Record<string, string> = {
+        ...(parseEnv(readFileSync(path.join(E2E, 'pay-api.env'), 'utf8')) as Record<string, string>),
+        ...Object.fromEntries(deployed),
+    }
+    for (const key of Object.keys(result)) {
         const override = process.env[key]
         if (override) result[key] = override
     }
@@ -114,27 +126,39 @@ function secrets(): Record<string, string> {
     }
 }
 
+/** The compose files of a failure run; a local override is not merged by itself once COMPOSE_FILE is set. */
+function failureFiles(): Record<string, string> {
+    const files = [
+        'compose.yaml',
+        'compose.failure.yaml',
+        ...(existsSync(path.join(E2E, 'compose.override.yaml'))
+            ? [
+                  'compose.override.yaml',
+              ]
+            : []),
+    ]
+    return {
+        COMPOSE_FILE: files.join(':'),
+    }
+}
+
 /**
- * Global setup: ../.env with the images and fresh secrets, then the stack up
- * and healthy (migrations first, as in the cluster). The returned teardown
+ * Global setup: ../.env with the place of this run, the images and fresh
+ * secrets, then the stack up and healthy (migrations first, as in the
+ * cluster). What a killed run left behind goes first. The returned teardown
  * saves the logs to test-results/compose.log and removes the stack, unless
- * E2E_KEEP=1 keeps it for a look (`docker compose -f e2e/compose.yaml down -v`).
+ * E2E_KEEP=1 keeps it for a look (`docker compose down -v` in e2e/).
  */
 export default function setup() {
     const env = {
         ...images(),
         ...secrets(),
     }
-    const pay = Boolean(env.PAY_API_IMAGE)
-    process.env[PAY_API_ENV] = pay ? '1' : ''
     // Double quotes: compose reads \n in them as a newline (the PEM).
     const lines = Object.entries({
+        ...place,
+        ...(FAILURE_SUITE ? failureFiles() : {}),
         ...env,
-        ...(pay
-            ? {
-                  COMPOSE_PROFILES: 'pay',
-              }
-            : {}),
     }).map(([key, value]) => `${key}="${value.replaceAll('\n', '\\n')}"`)
     writeFileSync(
         path.join(E2E, '.env'),
@@ -143,15 +167,15 @@ export default function setup() {
             mode: 0o600,
         },
     )
-    console.log('Images (the deployed set and overrides from the environment):')
+    console.log('Images (the deployed set, the pay-api pin, overrides from the environment):')
     for (const [key, value] of Object.entries(env)) if (key.endsWith('_IMAGE')) console.log(`  ${key}=${value}`)
-    // In GitHub Actions a warning annotation, so a green run says what it left out.
-    if (!pay) console.log(`${process.env.GITHUB_ACTIONS ? '::warning::' : ''}Payment tests skip: ${NO_PAY_API}`)
 
+    const remove = () => compose('down', '--volumes', '--remove-orphans', '--timeout', '5')
     const keep = process.env.E2E_KEEP === '1'
     const down = () => {
-        if (!keep) compose('down', '--volumes', '--remove-orphans', '--timeout', '5')
+        if (!keep) remove()
     }
+    remove()
     const started = Date.now()
     try {
         compose('up', '--detach', '--wait', '--wait-timeout', '300')
