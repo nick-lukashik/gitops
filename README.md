@@ -197,13 +197,13 @@ kubectl -n prod run priv-test --image=busybox --restart=Never \
 # Error from server (Forbidden): ... violates PodSecurity "restricted:v1.36"
 ```
 
-Network check: a throwaway pod in `prod` has no service labels, so only the namespace default applies and it reaches nothing, neither DNS nor Loki:
+Network check: a throwaway pod in `prod` has no service labels, so only the namespace default applies and it reaches nothing, neither DNS nor Loki. kube-router applies the policies to a new pod a few seconds after it starts, so the check waits 15 seconds first:
 
 ```sh
 kubectl -n prod run np-test --image=busybox:1.37 --restart=Never --rm -i --overrides='{"spec":{
   "securityContext":{"runAsNonRoot":true,"runAsUser":65534,"seccompProfile":{"type":"RuntimeDefault"}},
   "containers":[{"name":"np-test","image":"busybox:1.37","command":["sh","-c",
-    "nslookup kubernetes.default.svc.cluster.local; wget -T 5 -qO- http://loki.monitoring.svc.cluster.local:3100/ready || echo blocked"],
+    "sleep 15; nslookup kubernetes.default.svc.cluster.local; wget -T 5 -qO- http://loki.monitoring.svc.cluster.local:3100/ready || echo blocked"],
   "securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}}}]}}'
 # nslookup: timed out; wget: blocked
 ```
