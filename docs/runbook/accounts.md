@@ -9,9 +9,9 @@ The privacy policy promises both on request, through the contact on the site, an
 | `wallet` | the wallets, the ledger `wallet_tx` and its refs | kept, the wallet restricted (below) |
 | `pay` | nothing yet: pay-api is not deployed | once it is, its payments are payment records and are kept like the ledger |
 
-**Why the wallet is kept.** The policy says payment records are kept as long as accounting rules require, and the ledger is the record of coins bought and spent: `wallet_tx` and `wallet_refs` refuse UPDATE and DELETE for every role (wallet-api migration `0001`). The wallet is anonymized instead of deleted: once the account is gone, its `user_id` names nobody, since the email, the name, Google and the passkeys were only in `id`. Write `reason` of an `adjust` without personal data: it stays too.
+**Why the wallet is kept.** The policy says payment records are kept as long as accounting rules require, and the ledger is the record of coins bought and spent: `wallet_tx` and `wallet_refs` refuse UPDATE and DELETE for every role (wallet-api migration `0001`). The wallet is anonymized instead of deleted: once the account is gone, its `user_id` names nobody, since the email, the name, Google and the passkeys were only in `id`. Write `reason` of an `adjust` without personal data: it stays too, so [step 3](#delete-the-account) reads what the person's rows already hold.
 
-Nothing else needs a step: Redis holds only hashes of refresh tokens by session id and rate-limit counters (by a digest of the email, the user id or the IP), which expire by themselves (30 days at most) and open nothing once the session rows are gone; published outbox rows carry the user id, never the email or the name, and are purged after 7 days. Server logs (Loki) keep their lines for 30 days and Postgres backups 14 days, then the data is gone from them too.
+Nothing else needs a step. Redis belongs to id-api: notifications-api and wallet-api have no `REDIS_URL` and keep nothing there. It holds only hashes of refresh tokens by session id, passkey challenges (5 minutes) and rate-limit counters (by a digest of the email, the user id or the IP), which expire by themselves (30 days at most) and open nothing once the session rows are gone. Published outbox rows carry the user id, never the email or the name, and are purged after 7 days. Server logs (Loki) keep their lines for 30 days and Postgres backups 14 days, then the data is gone from them too.
 
 ## Before anything
 
@@ -71,7 +71,7 @@ SELECT json_build_object(
     'wallets', (SELECT coalesce(json_agg(w ORDER BY w.unit), '[]') FROM (
         SELECT unit, balance, state, created_at FROM wallets WHERE user_id = :'uid') w),
     'history', (SELECT coalesce(json_agg(t ORDER BY t.created_at), '[]') FROM (
-        SELECT created_at, unit, kind, source, amount, balance_after, ref, reason FROM wallet_tx WHERE user_id = :'uid') t)
+        SELECT created_at, unit, kind, source, amount, balance_after, ref, object_ref, reason FROM wallet_tx WHERE user_id = :'uid') t)
 );
 SQL
 ```
@@ -109,7 +109,16 @@ In this order: `id` first, so the person can no longer sign in, then the inbox, 
    SQL
    ```
 
-3. `wallet`: restricted, so nothing can spend from it; the ledger stays as it is.
+3. `wallet`: read the reasons the ledger keeps. The kept ledger is anonymized only if none of them names the person.
+
+   ```sh
+   pg -d wallet -v uid="$USER_ID" <<'SQL'
+   SELECT created_at, kind, reason FROM wallet_tx WHERE user_id = :'uid' AND reason IS NOT NULL ORDER BY created_at;
+   SQL
+   ```
+
+   A reason with a name, an email or anything else that points at the person cannot be changed: the row refuses UPDATE. Note its `created_at`, not its text, with this deletion in step 5, and say in the answer to the person that this entry stays.
+4. `wallet`: restricted, so nothing can spend from it; the ledger stays as it is.
 
    ```sh
    pg -d wallet -v uid="$USER_ID" <<'SQL'
@@ -117,7 +126,7 @@ In this order: `id` first, so the person can no longer sign in, then the inbox, 
    SQL
    ```
 
-4. Note the date and the user id (never the email: this repo is public) in Bitwarden, note `account-deletions`. A point-in-time restore to a moment before the deletion brings the account back, and the deletion is run again from that note (`infra` `docs/recovery.md`).
+5. Add a line to the Bitwarden note `account-deletions`: the time in UTC and the user id. That is all a run [after a restore](#again-after-a-restore) needs: the time says whether the restore undid this deletion, and the restored row has the email. Never the email itself: the note would keep what was just deleted.
 
 ## Check
 
@@ -148,4 +157,19 @@ SELECT count(*) AS ledger_rows FROM wallet_tx WHERE user_id = :'uid';
 SQL
 ```
 
-Then answer the person: the account is deleted; backups drop it within 14 days and logs within 30; the payment history is kept, with no name or email attached, as accounting rules require.
+Then answer the person: the account is deleted; backups drop it within 14 days and logs within 30; the payment history is kept, with no name or email attached (but for an entry step 3 found), as accounting rules require.
+
+## Again after a restore
+
+A point-in-time restore to a moment before a deletion brings the account back (`infra` `docs/recovery.md`). Run the deletion again for every line of `account-deletions` later than the restore target. The note has only the user id; the email comes from the restored row. `PRIMARY` and `pg` as in [Set up](#set-up), with the cluster the services use.
+
+```sh
+USER_ID='00000000-0000-0000-0000-000000000000'   # from the note
+EMAIL=$(pg -d id -At -v uid="$USER_ID" <<'SQL'
+SELECT email FROM users WHERE id = :'uid';
+SQL
+)
+echo "$EMAIL"   # empty: the restored data has no such row, and the steps below find nothing in id
+```
+
+Then steps 1 to 4 of [Delete the account](#delete-the-account) and [Check](#check), unchanged: they are safe to repeat. The note already has the line, and the person has their answer.

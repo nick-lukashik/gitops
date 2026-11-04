@@ -205,6 +205,15 @@ kubectl -n prod get pods -l app.kubernetes.io/name=notifications-api
 kubectl -n prod logs deploy/notifications-api --tail=200
 ```
 
+id-api logs that line only when it got no usable answer (`unreachable`, or a body it cannot parse). `failed` is not logged by id-api, so an empty grep clears nothing: the reason is in notifications-api, in its log line `Sign-in code not accepted by the provider` and in its `deliveries` table.
+
+```sh
+kubectl -n data exec pg-1 -c postgres -- psql -d notifications -c \
+  "select status, attempts, last_error, updated_at from deliveries where template = 'auth.code' and status in ('failed', 'skipped') order by updated_at desc limit 20"
+```
+
+`failed`: the provider refused the email, `last_error` says why. `skipped`, `expired before sending`: the code expired first; this case has no log line in either service.
+
 ### EmailJobsFailed
 
 notifications-api gave up on emails of a template (`welcome`, `receipt`) in the last hour (warning): the job failed every retry, so the user did not get the email. The reason of the last attempt is in the `deliveries` table:
