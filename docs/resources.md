@@ -18,11 +18,11 @@ Request and limit of memory from the values in `platform/`. Short Jobs (`startup
 | node-exporter | `monitoring-node` | 32 MiB | 64 MiB |
 | Loki | `monitoring` | 512 MiB | 1024 MiB |
 | Alloy 128/512 + config-reloader 32/64 | `monitoring-node` | 160 MiB | 576 MiB |
-| Grafana | `monitoring` | 128 MiB | 256 MiB |
+| Grafana | `monitoring` | 256 MiB | 512 MiB |
 | K3s: CoreDNS, metrics-server, local-path, svclb (estimate) | `kube-system` | 200 MiB | 300 MiB |
-| **Platform, total** | | **≈ 3.7 GiB** | **≈ 7.8 GiB** |
+| **Platform, total** | | **≈ 3.8 GiB** | **≈ 8.0 GiB** |
 | Services: ResourceQuota `memory` | `prod` | 4 GiB | 8 GiB |
-| **All** | | **≈ 7.7 GiB (62%)** | **≈ 15.8 GiB (126%)** |
+| **All** | | **≈ 7.8 GiB (63%)** | **≈ 16.0 GiB (128%)** |
 
 - The requests fit with room to spare. The limits exceed the node memory by a quarter: not all components reach their limit at once, and under pressure the kubelet evicts pods of lower priority first (`batch`, then `service`).
 - A container in `prod` without its own resources gets a 128 MiB request and a 256 MiB limit (LimitRange `defaults`). Services set their own in the components: web 128 MiB request / 384 MiB limit, api 192 MiB / 512 MiB, the api migrate Job 128 MiB / 512 MiB; a CPU request only, no CPU limit ([components/README.md](../components/README.md)).
