@@ -1,0 +1,45 @@
+# Email through Resend and the in-app inbox (repo notifications-api).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: prod
+resources:
+  - service.yaml
+  - notifications-api-secrets.sealedsecret.yaml
+components:
+  # No public route: only the platform's pods call it.
+  - ../../../components/service
+  - ../../../components/api
+  - ../../../components/internal
+# Non-secret runtime env of the pods and the migrate Job (envFrom). Everything
+# else has the production value as its default in the service.
+configMapGenerator:
+  - name: notifications-api-config
+    literals:
+      - LOG_LEVEL=info
+      # 4 replicas x 5 connections per api at most (docs/runbook/postgres.md).
+      - DATABASE_POOL_MAX=5
+      - MAIL_TRANSPORT=smtp
+# Images only by digest. The first digest and source-sha are set by hand from
+# the summary of job "image" of notifications-api; then the deploy PR keeps them current.
+images:
+  - name: ghcr.io/nick-lukashik/notifications-api
+    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+commonAnnotations:
+  nick-lukashik.com/source-sha: "0000000000000000000000000000000000000000"
+  nick-lukashik.com/source-repo: nick-lukashik/notifications-api
+patches:
+  # It calls other apis (JWKS of id-api at least): the one label for both
+  # directions of api calls (platform/policies/prod.yaml, components/api).
+  - target:
+      kind: Deployment
+      labelSelector: app.kubernetes.io/component=server
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: any
+      spec:
+        template:
+          metadata:
+            labels:
+              nick-lukashik.com/api-client: "true"

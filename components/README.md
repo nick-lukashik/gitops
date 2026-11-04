@@ -10,6 +10,7 @@ Kustomize components. They are never built on their own, only as part of `apps/`
 | `service/` | common part of every service, see below |
 | `api/` | api kind (NestJS), after `service` |
 | `web/` | web kind (Next.js), after `service` |
+| `internal/` | after `api` instead of a host: no IngressRoute, no ingress from Traefik. For an api only the platform's pods call (the account services) |
 
 ## Services
 

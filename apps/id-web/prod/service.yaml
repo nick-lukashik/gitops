@@ -1,0 +1,18 @@
+# Local config for the components; never deployed.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: service
+  annotations:
+    config.kubernetes.io/local-config: "true"
+data:
+  name: id-web
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: route
+  annotations:
+    config.kubernetes.io/local-config: "true"
+data:
+  subdomain: id
