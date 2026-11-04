@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto'
 import { type BrowserContext, type Cookie, expect, type Page, test } from '@playwright/test'
 import { subjects, ui } from './copy'
 import { signInCode, subjectsTo } from './mailpit'
-import { NO_PAY_API, PAY_API_ENV } from './stack'
 
 // One person's way through the deployed set, in one browser: every test starts
 // where the previous one ended, and a failed one skips the rest.
@@ -11,7 +10,6 @@ test.describe.configure({
 })
 
 const email = `e2e-${randomUUID()}@example.com`
-const payApi = process.env[PAY_API_ENV] === '1'
 let context: BrowserContext
 let page: Page
 
@@ -72,6 +70,20 @@ async function confirmPayment(on: Page) {
         .click()
 }
 
+/** The exact total and one history entry per pack, read afresh. */
+async function expectCredits() {
+    await expectBalance(650)
+    for (const amount of [
+        '+550',
+        '+100',
+    ])
+        await expect(
+            page.getByRole('main').getByText(amount, {
+                exact: true,
+            }),
+        ).toHaveCount(1)
+}
+
 test('sign-in with the code from the email', async ({ request }) => {
     await page.goto('/login?lang=en')
     await emailField(page).fill(email)
@@ -105,7 +117,6 @@ test('a new wallet has 0 coins', async () => {
 })
 
 test('a pack paid with the test provider is credited exactly once', async () => {
-    test.skip(!payApi, NO_PAY_API)
     await startCheckout('550 coins (+10%)', '$5.00')
     const checkout = page.url()
     // The same checkout in a second tab: its button is pressed after the payment went through.
@@ -129,20 +140,14 @@ test('a pack paid with the test provider is credited exactly once', async () => 
     await startCheckout('100 coins', '$1.00')
     await confirmPayment(page)
     await expect(page).toHaveURL(/\/wallet\?paid=1$/)
-    await expectBalance(650)
-    for (const amount of [
-        '+550',
-        '+100',
-    ])
-        await expect(
-            page.getByRole('main').getByText(amount, {
-                exact: true,
-            }),
-        ).toHaveCount(1)
+    await expectCredits()
+
+    // A duplicate published late (a slower outbox retry) lands after the read above.
+    await page.waitForTimeout(3_000)
+    await expectCredits()
 })
 
 test('one receipt email per payment', async ({ request }) => {
-    test.skip(!payApi, NO_PAY_API)
     const receipts = async () => (await subjectsTo(request, email)).filter(subject => subjects.anyReceipt.test(subject))
     await expect
         .poll(receipts, {

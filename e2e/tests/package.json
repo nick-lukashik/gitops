@@ -10,6 +10,7 @@
     },
     "scripts": {
         "test": "playwright test",
+        "test:failure": "E2E_SUITE=failure playwright test",
         "lint": "biome check .",
         "format": "biome check --write .",
         "typecheck": "tsc --noEmit",

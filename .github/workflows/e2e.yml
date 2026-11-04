@@ -5,7 +5,9 @@ name: e2e
 # scenario through id-web from the sign-in email to the receipt email. Runs on
 # PRs that change the deployed set (the deploy PRs) or the e2e itself, and by
 # hand. Images are pulled, never built. Not required by the master ruleset:
-# the owner reads it before merging a deploy PR.
+# the owner reads it before merging a deploy PR. The failure scenarios (tag
+# @failure) stop parts of the stack and take longer: nightly and by hand, never
+# on a PR.
 
 on:
   pull_request:
@@ -15,25 +17,36 @@ on:
       - "e2e/**"
       - "scripts/versions.sh"
       - ".github/workflows/e2e.yml"
+  schedule:
+    - cron: "37 2 * * *"
   workflow_dispatch:
     inputs:
       pay-api-image:
-        description: "pay-api while apps/pay-api/prod does not exist: ghcr.io/nick-lukashik/pay-api:<tag> or @sha256:<digest>. Empty skips the payment tests."
+        description: "pay-api instead of the pin in e2e/pay-api.env: ghcr.io/nick-lukashik/pay-api:<tag> or @sha256:<digest>. Empty uses the pin."
         type: string
         default: ""
 
 concurrency:
-  group: e2e-${{ github.event.pull_request.number || github.ref }}
+  group: e2e-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions: {}
 
 jobs:
   e2e:
+    # A PR has the deploy suite under the check's old name, the nightly run the
+    # failure scenarios, a run by hand both.
+    name: ${{ matrix.suite == 'failure' && 'e2e failure scenarios' || 'e2e' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: ${{ fromJSON(github.event_name == 'pull_request' && '["deploy"]' || github.event_name == 'schedule' && '["failure"]' || '["deploy","failure"]') }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: ${{ matrix.suite == 'failure' && 45 || 15 }}
     permissions:
       contents: read
+    env:
+      E2E_SUITE: ${{ matrix.suite }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -50,17 +63,21 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # The input, or the pin; once apps/pay-api/prod exists stack.ts takes the deployed digest over the pin.
       - name: pay-api image
-        if: github.event_name == 'workflow_dispatch' && inputs.pay-api-image != ''
         env:
           IMAGE: ${{ inputs.pay-api-image }}
         run: |
-          if [[ ! $IMAGE =~ ^ghcr\.io/nick-lukashik/pay-api(:[A-Za-z0-9._-]{1,128}|@sha256:[0-9a-f]{64})$ ]]; then
-            echo "::error::pay-api-image: ghcr.io/nick-lukashik/pay-api:<tag> or @sha256:<digest>"
-            exit 1
+          if [[ -n $IMAGE ]]; then
+            if [[ ! $IMAGE =~ ^ghcr\.io/nick-lukashik/pay-api(:[A-Za-z0-9._-]{1,128}|@sha256:[0-9a-f]{64})$ ]]; then
+              echo "::error::pay-api-image: ghcr.io/nick-lukashik/pay-api:<tag> or @sha256:<digest>"
+              exit 1
+            fi
+            echo "PAY_API_IMAGE=$IMAGE" >> "$GITHUB_ENV"
+            echo "pay-api: \`$IMAGE\`" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "pay-api: \`$(sed -n 's/^PAY_API_IMAGE=//p' e2e/pay-api.env)\` (the pin in e2e/pay-api.env)" >> "$GITHUB_STEP_SUMMARY"
           fi
-          echo "PAY_API_IMAGE=$IMAGE" >> "$GITHUB_ENV"
-          echo "pay-api: \`$IMAGE\`" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Set up pnpm
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
@@ -96,7 +113,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: e2e-report
+          name: e2e-report-${{ matrix.suite }}
           path: |
             e2e/tests/playwright-report/
             e2e/tests/test-results/

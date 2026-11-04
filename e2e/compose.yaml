@@ -1,13 +1,14 @@
 # The deployed set end to end on one machine (README.md). The service images
-# are the digests of apps/<service>/prod (scripts/versions.sh --env); they and
-# the secrets of the run come from .env, which tests/stack.ts writes before
-# every run. Data stores as in platform/data/stores, Mailpit for email. Ports
-# on 127.0.0.1 only: id-web 3900, Mailpit 3901.
+# are the digests of apps/<service>/prod (scripts/versions.sh --env) and the
+# pin in pay-api.env; they and the secrets of the run come from .env, which
+# tests/stack.ts writes before every run. Data stores as in platform/data/stores,
+# Mailpit for email. Ports on 127.0.0.1 only: id-web 3900, Mailpit 3901 unless
+# .env says otherwise. COMPOSE_PROJECT_NAME in .env wins over this name.
 name: nl-e2e
 
 # id-web's public origin: the issuer of access tokens, links in emails, the
 # fake checkout. Keep it equal to WEB_URL in tests/stack.ts.
-x-origin: &origin http://localhost:3900
+x-origin: &origin http://localhost:${E2E_WEB_PORT:-3900}
 
 # The pod contract (components/service): the image's non-root user, read-only
 # root filesystem with /tmp writable, no capabilities. The service images are
@@ -141,7 +142,7 @@ services:
       ID_WEB_URL: *origin
     # Mailpit's API and UI: the port belongs to this namespace.
     ports:
-      - 127.0.0.1:3901:8025
+      - 127.0.0.1:${E2E_MAILPIT_PORT:-3901}:8025
     depends_on:
       notifications-api-migrate:
         condition: service_completed_successfully
@@ -190,20 +191,16 @@ services:
       rabbitmq:
         condition: service_healthy
 
-  # Profile "pay": pay-api has no apps/pay-api/prod yet; tests/stack.ts turns
-  # it on when PAY_API_IMAGE is set (the deployed set once it has a folder, or
-  # by hand). Without it the payment tests are skipped.
+  # pay-api has no apps/pay-api/prod yet: its image is the pin in pay-api.env.
   pay-api-migrate:
     <<: *migrate
-    profiles: [pay]
-    image: ${PAY_API_IMAGE:-pay-api-image-not-set}
+    image: ${PAY_API_IMAGE:?}
     environment:
       DATABASE_URL: postgres://pay:${PG_PAY_PASSWORD}@postgres:5432/pay
 
   pay-api:
     <<: *service
-    profiles: [pay]
-    image: ${PAY_API_IMAGE:-pay-api-image-not-set}
+    image: ${PAY_API_IMAGE:?}
     environment:
       LOG_LEVEL: info
       DATABASE_POOL_MAX: 5
@@ -238,8 +235,10 @@ services:
       PAY_API_URL: http://pay-api:3000
       NOTIFICATIONS_API_URL: http://notifications-api:3000
       SESSION_SECRET: ${ID_WEB_SESSION_SECRET:?}
+      # Off in prod until pay-api runs there; the payment scenario needs the pages.
+      PAYMENTS_ENABLED: "true"
     ports:
-      - 127.0.0.1:3900:3000
+      - 127.0.0.1:${E2E_WEB_PORT:-3900}:3000
     depends_on:
       id-api:
         condition: service_healthy
@@ -249,4 +248,3 @@ services:
         condition: service_healthy
       pay-api:
         condition: service_healthy
-        required: false

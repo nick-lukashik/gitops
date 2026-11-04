@@ -10,6 +10,12 @@ export const ui = {
         send: 'Send the code',
         code: 'Code from the email',
         verify: 'Sign in',
+        resend: 'Send a new code',
+        errors: {
+            unavailable: 'Sign-in is unavailable right now. Try again a little later.',
+            deliveryFailed: 'The code could not be sent. Try again in a minute.',
+            rateLimited: /^Too many attempts\./,
+        },
     },
     nav: {
         signOut: 'Sign out',
@@ -20,11 +26,20 @@ export const ui = {
         sessions: 'Signed-in devices',
         /** The end of the current session's line in the devices list. */
         thisDevice: /· this device$/,
+        unavailable: 'The account is unavailable right now. Try again a little later.',
     },
     wallet: {
         buy: 'Buy',
         coins: (count: number) => `${count} coins`,
+        unavailable: 'Unavailable right now.',
+        historyUnavailable: 'The history is unavailable right now.',
     },
+    payments: {
+        /** A payment's line on /payments ends with its status. */
+        waiting: 'Waiting for payment',
+    },
+    /** The error page of a render that failed (src/app/error.tsx): no state the design has for an outage. */
+    crash: 'Something went wrong',
     fakePay: {
         pay: 'Confirm the payment',
         done: 'This payment is already finished.',

@@ -7,6 +7,23 @@ type Summary = {
     Subject: string
 }
 
+type MessageList = {
+    messages: Summary[]
+}
+
+/** The code of every sign-in email Mailpit holds, for every address. */
+export async function everySignInCode(request: APIRequestContext): Promise<string[]> {
+    const response = await request.get(`${MAILPIT_URL}/api/v1/messages`, {
+        params: {
+            limit: '1000',
+        },
+    })
+    expect(response.ok(), 'Mailpit messages').toBe(true)
+    return ((await response.json()) as MessageList).messages
+        .map(message => subjects.signInCode.exec(message.Subject)?.[1])
+        .filter(code => code !== undefined)
+}
+
 /** Subjects of every email Mailpit holds for the address, newest first (Mailpit API v1 search). */
 export async function subjectsTo(request: APIRequestContext, address: string): Promise<string[]> {
     const response = await request.get(`${MAILPIT_URL}/api/v1/search`, {
