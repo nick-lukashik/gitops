@@ -120,13 +120,13 @@ f=platform/data/stores/pg-r2.yaml
   kubeseal --cert "$CRT" --format yaml >"$f"
 ```
 
-Then replace the `pg-r2` placeholder at the end of `secrets.sealedsecret.yaml` with the content of `$f` and delete `$f`.
+Then replace the `pg-r2` document at the end of `secrets.sealedsecret.yaml` with the content of `$f` and delete `$f`. The URI of the item is the S3 endpoint without a path (`https://<account-id>.r2.cloudflarestorage.com`): the sidecar takes it as `AWS_ENDPOINT_URL_S3`.
 
 A value from Bitwarden that joins an existing `<service>-secrets` (Google, Resend) is merged with `kubeseal --merge-into`: the other keys stay as they are and are never decrypted.
 
 ```sh
-"$S" get google-oauth:password | tr -d '\n' |
-  kubectl create secret generic id-api-secrets -n prod --from-file=GOOGLE_CLIENT_SECRET=/dev/stdin --dry-run=client -o yaml |
+"$S" bundle GOOGLE_CLIENT_ID=google-oauth:username GOOGLE_CLIENT_SECRET=google-oauth:password |
+  kubectl create secret generic id-api-secrets -n prod --from-env-file=/dev/stdin --dry-run=client -o yaml |
   kubeseal --cert "$CRT" --format yaml --merge-into apps/id-api/prod/id-api-secrets.sealedsecret.yaml
 "$S" get resend-smtp:password | tr -d '\n' | { read -r k; printf 'smtps://resend:%s@smtp.resend.com:465' "$k"; } |
   kubectl create secret generic notifications-api-secrets -n prod --from-file=SMTP_URL=/dev/stdin --dry-run=client -o yaml |
