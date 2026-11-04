@@ -122,19 +122,7 @@ Right after the bootstrap some applications are `Degraded` or `Progressing`: the
 
 Every PR passes `make verify`. The merge to `master` is the rollout.
 
-1. **Certificate.** Seal `cf-dns01-token` ([SECRETS.md](SECRETS.md)), PR, merge. Wait for the staging certificate:
-
-   ```sh
-   kubectl -n traefik get certificate wildcard-nick-lukashik-com     # READY True, staging issuer
-   ```
-
-2. **Production issuer.** PR:
-
-   ```sh
-   sed -i '' 's/name: letsencrypt-staging/name: letsencrypt/' platform/traefik-config/tls.yaml
-   ```
-
-   After the merge:
+1. **Certificate.** Seal `cf-dns01-token` ([SECRETS.md](SECRETS.md), the token is checked at Cloudflare first), PR, merge. cert-manager has only the production issuer `letsencrypt`. After the merge:
 
    ```sh
    kubectl get certificate -A                                         # Ready=True
@@ -152,8 +140,8 @@ Every PR passes `make verify`. The merge to `master` is the rollout.
      grep -i -E 'alert|certificate required'                           # direct TLS without the Cloudflare certificate fails
    ```
 
-3. **Logs in R2.** After `apply` of `infra` step 1 (bucket `nl-loki`) and the key `r2-loki` in Bitwarden: seal `loki-r2` ([SECRETS.md](SECRETS.md)), PR, merge. Until then Loki does not start (no endpoint), and the other applications are not affected.
-4. **Telegram and Healthchecks.** Once the Telegram group and the Healthchecks check exist: write the group and topic ids from Bitwarden `ops-telegram-topics` into `components/settings/settings.yaml`; seal `ops-telegram`, `argocd-notifications-secret`, `hc-watchdog`, `grafana-admin`, `grafana-auth-proxy`. One PR, merge. Checks:
+2. **Logs in R2.** After `apply` of `infra` step 1 (bucket `nl-loki`) and the key `r2-loki` in Bitwarden: seal `loki-r2` ([SECRETS.md](SECRETS.md)), PR, merge. Until then Loki does not start (no endpoint), and the other applications are not affected.
+3. **Telegram and Healthchecks.** Once the Telegram group and the Healthchecks check exist: write the group and topic ids from Bitwarden `ops-telegram-topics` into `components/settings/settings.yaml`; seal `ops-telegram`, `argocd-notifications-secret`, `hc-watchdog`, `grafana-admin`, `grafana-auth-proxy`. One PR, merge. Checks:
 
    - a test alert ([docs/runbook/access.md](docs/runbook/access.md)) arrives in "Alerts"; `hc-watchdog` in Healthchecks is green;
    - a sync failure reaches "Alerts" within 3 minutes (an application on a folder that does not exist, through a port-forward of Argo CD):
@@ -174,7 +162,7 @@ Every PR passes `make verify`. The merge to `master` is the rollout.
      ```
 
    - in Grafana (port-forward) Explore → Loki: `{namespace="prod", level="error"}` for the last hour.
-5. **The landing (stage 1 check).** The first build of `landing-web` on `master` pushes its image; its job `deploy` fails once (this folder is not in `gitops` yet), which is expected. Take the digest and the commit from the summary of job `image` of that run:
+4. **The landing (stage 1 check).** The first build of `landing-web` on `master` pushes its image; its job `deploy` fails once (this folder is not in `gitops` yet), which is expected. Take the digest and the commit from the summary of job `image` of that run:
 
    ```sh
    DIGEST=sha256:<64 hex>        # summary of job "image"

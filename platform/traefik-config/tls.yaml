@@ -31,7 +31,7 @@ spec:
       - cloudflare-origin-pull-ca
 ---
 # Wildcard certificate; secret used by the default TLSStore.
-# Issuer: letsencrypt-staging first; switch to letsencrypt after the check (README).
+# Issuer: letsencrypt (production, platform/cert-manager/config/clusterissuers.yaml).
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -42,7 +42,7 @@ spec:
   issuerRef:
     group: cert-manager.io
     kind: ClusterIssuer
-    name: letsencrypt-staging
+    name: letsencrypt
   dnsNames:
     - DOMAIN
     - "*.DOMAIN"
