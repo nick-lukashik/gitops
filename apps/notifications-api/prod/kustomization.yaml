@@ -23,9 +23,9 @@ configMapGenerator:
 # the summary of job "image" of notifications-api; then the deploy PR keeps them current.
 images:
   - name: ghcr.io/nick-lukashik/notifications-api
-    digest: sha256:bd5770906f029fe9cc05e5590e08dbcc32c0c2daa02c908fc31b255adfa32074
+    digest: sha256:31a1bc69f25c7455146df607fe5565dd90d7007c4cd3be93e6cdaf1701cd0984
 commonAnnotations:
-  nick-lukashik.com/source-sha: "5d6a8fd4ebd816eb76e0fc9a3fe56be97de494e5"
+  nick-lukashik.com/source-sha: "010234d8df5d2f3d1256fb23705b3865cb5e7f0c"
   nick-lukashik.com/source-repo: nick-lukashik/notifications-api
 patches:
   # It calls other apis (JWKS of id-api at least): the one label for both
