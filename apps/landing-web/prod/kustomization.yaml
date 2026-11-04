@@ -23,9 +23,9 @@ configMapGenerator:
 # keep the keys, never add newName or newTag.
 images:
   - name: ghcr.io/nick-lukashik/landing-web
-    digest: sha256:f09e6a1a036b6597379f8ac61a392d5c6b79386c64960fba15aedc0c131b167e
+    digest: sha256:514bc3758035d167c82b84a778d9e3d299fba33051d33ef05c9a020f04599b6b
 commonAnnotations:
-  nick-lukashik.com/source-sha: "cf6dc9aad351618c77a41256a08e282b2d1760d4"
+  nick-lukashik.com/source-sha: "3d2e5f6682c97c244839583aabc941d43394afc0"
   nick-lukashik.com/source-repo: nick-lukashik/landing-web
 replacements:
   # SITE_URL=https://<host of the IngressRoute>.
