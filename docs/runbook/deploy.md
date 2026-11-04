@@ -10,6 +10,18 @@ SVC=landing-web
 
 ## Review a change before the merge
 
+A deploy PR first: look at the check `e2e` and at the deployed set it tested ([e2e/README.md](../../e2e/README.md)). The `master` ruleset does not require that check, so GitHub lets the merge through whatever it says.
+
+```sh
+gh pr checks <PR number>        # e2e: pass
+scripts/versions.sh             # on master: the deployed set now
+```
+
+- Red or still running: do not merge. A failed run has the artifact `e2e-report`: the Playwright report, traces and `compose.log`.
+- The job summary of the run lists the set under test: service, source commit, digest. It must show this PR's digest for this service and, for the others, what `scripts/versions.sh` prints on `master`. If another deploy was merged after the run, the set is out of date: `gh pr update-branch <PR number>` starts a new run (a re-run would test the same merge commit).
+
+Then, for any PR:
+
 1. What changes in the manifests, `master` against the PR branch (no cluster needed):
 
    ```sh
@@ -70,7 +82,7 @@ kubectl -n argocd get application $SVC-prod -w
 
 Anything changed by hand during the pause is overwritten. What has to stay goes to git through a PR first.
 
-The platform applications (`root`, `argocd`, `cert-manager`, ...) have no self-heal for their own Application: `root` syncs them only on a new commit. A platform application is paused with the same command and its name, and nothing is merged to `master` until the pause ends.
+The platform applications (`root`, `argocd`, `cert-manager`, ...) have no self-heal for their own Application: `root` syncs them only on a new commit. A platform application is paused with the same command and its name, and nothing is merged to `master` until the pause ends. The one exception is the recovery PR of [postgres.md](postgres.md).
 
 ## The migration failed
 

@@ -46,10 +46,16 @@ spec:
             # to Traefik from a pod address, so without it Traefik drops their
             # X-Forwarded-For. Only Cloudflare passes the handshake (tls.yaml); the
             # service network (10.43.0.0/16) is never a source.
+            # Services get the client address from real-ip@file, on every app route:
+            # X-Real-Ip and X-Forwarded-For overwritten from CF-Connecting-IP, whatever
+            # the browser sent. Not so ClientHost in the access log: it can be a list
+            # whose leading entries come from the browser, so per-client queries use
+            # CF-Connecting-IP from the same log line.
             - 10.42.0.0/16
     service:
       spec:
-        # Keep the source address (a Cloudflare edge) instead of a node address.
+        # Traffic stays on the node that received it. With ServiceLB, connections
+        # still reach Traefik from the svclb pod address (see trustedIPs).
         externalTrafficPolicy: Local
     logs:
       general:

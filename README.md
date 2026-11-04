@@ -12,7 +12,8 @@ Everything that runs in the nick-lukashik cluster: single-node K3s, Argo CD 3.x 
 | [`components/`](components/) | kustomize components: `service` + `api` or `web` (the service runtime contract), settings, host |
 | [`projects/`](projects/) | AppProjects `platform` and `prod` |
 | [`docs/`](docs/) | resource budget, runbooks |
-| [`scripts/`](scripts/) | the `make verify` checks |
+| [`e2e/`](e2e/) | the deployed set end to end on one machine, with real data stores and a browser ([e2e/README.md](e2e/README.md)); check `e2e` on deploy PRs |
+| [`scripts/`](scripts/) | the `make verify` checks; `scripts/versions.sh` prints the deployed set: service, source commit, image digest |
 
 Services follow the [service runtime contract](https://github.com/nick-lukashik/.github/blob/master/docs/service-contract.md): port `http` 3000, uid 10001, probes `/health/live` and `/health/ready`, config from ConfigMap `<service>-config`, secrets from SealedSecret `<service>-secrets`, api metrics on 9464 and migrations before the rollout. How a service folder looks: [apps/README.md](apps/README.md).
 
@@ -219,15 +220,17 @@ A merge of a deploy PR (or a rollback PR) changes `apps/<service>/prod/kustomiza
 - **Cloudflare ranges** in `platform/traefik-config/helmchartconfig.yaml` (`trustedIPs`): compare with `https://www.cloudflare.com/ips-v4` and `https://www.cloudflare.com/ips-v6`:
 
   ```sh
-  diff <(curl -s https://www.cloudflare.com/ips-v4; echo; curl -s https://www.cloudflare.com/ips-v6) \
-       <(sed -n 's/^ *- \([0-9a-f:.]*\/[0-9]*\)$/\1/p' platform/traefik-config/helmchartconfig.yaml)
+  diff <(curl -s https://www.cloudflare.com/ips-v4; echo; curl -s https://www.cloudflare.com/ips-v6; echo) \
+       <(sed -n 's/^ *- \([0-9a-f:.]*\/[0-9]*\)$/\1/p' platform/traefik-config/helmchartconfig.yaml | grep -v '^10\.42\.')
   ```
+
+  The command leaves out `10.42.0.0/16`: it is the K3s pod network, not a Cloudflare range, and it must stay in `trustedIPs` (the comment there says why).
 
 - **Authenticated Origin Pulls CA** (`platform/traefik-config/cloudflare-origin-pull-ca.pem`) is valid until 2029-11-01. Source: `https://developers.cloudflare.com/ssl/static/authenticated_origin_pull_ca.pem`.
 
 ## Runbooks
 
-- [docs/runbook/deploy.md](docs/runbook/deploy.md): the diff before a merge, rollback, pausing auto-sync, a failed migration.
+- [docs/runbook/deploy.md](docs/runbook/deploy.md): the e2e check and the diff before a merge, rollback, pausing auto-sync, a failed migration.
 - [docs/runbook/access.md](docs/runbook/access.md): Argo CD, Grafana, Alertmanager over port-forward; the admin password; repo access of a public `gitops`.
 - [docs/resources.md](docs/resources.md): memory and disk budget, priorities, Pod Security.
 - [Recovery](https://github.com/nick-lukashik/infra/blob/master/docs/recovery.md) (`infra`): RPO/RTO, restore on a clean server, the drill.

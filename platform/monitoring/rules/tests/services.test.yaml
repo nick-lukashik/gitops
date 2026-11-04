@@ -266,6 +266,66 @@ tests:
         alertname: EmailJobsFailed
         exp_alerts: []
 
+  - name: a scrape gap an hour ago does not make an old series look new
+    interval: 1m
+    input_series:
+      # Prometheus was down: no samples from 121m to 140m.
+      - series: 'emails_failed_total{namespace="prod",service="notifications-api",pod="notifications-api-1",template="receipt"}'
+        values: '3x120 _x20 3x120'
+      # The target was down: a stale marker, then no samples.
+      - series: 'emails_failed_total{namespace="prod",service="notifications-api",pod="notifications-api-1",template="welcome"}'
+        values: '2x120 stale _x19 2x120'
+      # One failed scrape: the stale marker alone, shorter than the lookback.
+      - series: 'emails_failed_total{namespace="prod",service="notifications-api",pod="notifications-api-2",template="receipt"}'
+        values: '4x120 stale 4x120'
+      # Pre-initialized at 0, nothing failed.
+      - series: 'emails_failed_total{namespace="prod",service="notifications-api",pod="notifications-api-2",template="welcome"}'
+        values: '0x120 _x20 0x120'
+    alert_rule_test:
+      # t-1h is the stale marker.
+      - eval_time: 181m
+        alertname: EmailJobsFailed
+        exp_alerts: []
+      # t-1h is in the gap, more than the 5 min lookback after the last sample.
+      - eval_time: 190m
+        alertname: EmailJobsFailed
+        exp_alerts: []
+
+  - name: a failure during a scrape gap alerts when the samples are back, then stops
+    interval: 1m
+    input_series:
+      - series: 'emails_failed_total{namespace="prod",service="notifications-api",pod="notifications-api-1",template="receipt"}'
+        values: '1x120 _x20 2x120'
+      # Pre-initialized at 0, the first failure falls in the gap.
+      - series: 'emails_failed_total{namespace="prod",service="notifications-api",pod="notifications-api-1",template="welcome"}'
+        values: '0x120 _x20 1x120'
+    alert_rule_test:
+      - eval_time: 145m
+        alertname: EmailJobsFailed
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              namespace: prod
+              service: notifications-api
+              template: receipt
+            exp_annotations:
+              summary: prod/notifications-api gave up on receipt emails
+              description: Email jobs failed every retry in the last hour; their users did not get them.
+              runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#emailjobsfailed
+          - exp_labels:
+              severity: warning
+              namespace: prod
+              service: notifications-api
+              template: welcome
+            exp_annotations:
+              summary: prod/notifications-api gave up on welcome emails
+              description: Email jobs failed every retry in the last hour; their users did not get them.
+              runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#emailjobsfailed
+      # t-1h is in the gap: the failure has left the hour, and the series is not new.
+      - eval_time: 190m
+        alertname: EmailJobsFailed
+        exp_alerts: []
+
   - name: unmatched and mismatched payment webhooks alert at once; other results do not
     interval: 1m
     input_series:
