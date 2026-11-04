@@ -19,7 +19,7 @@ The name comes from ConfigMap `service` `.data.name` (local config of the servic
 
 | | `service` (both kinds) | `api` adds | `web` adds |
 |---|---|---|---|
-| Workload | Deployment `<name>`, 1 replica, surge 1 / unavailable 0 | Job `<name>-migrate`: `node dist/db/migrate.js`, same image, config and secrets | |
+| Workload | Deployment `<name>`: 2 to 4 replicas (HorizontalPodAutoscaler on CPU, 75% of the request), surge 1 / unavailable 0, PodDisruptionBudget `maxUnavailable: 1` | Job `<name>-migrate`: `node dist/db/migrate.js`, same image, config and secrets | |
 | Ports | `http` 3000 (env `PORT=3000`); Service port 80 | `metrics` 9464 (env `METRICS_PORT=9464`) on the pod and the Service | |
 | Probes | startup `/health/live` (every 2 s, up to 2 min), liveness `/health/live`, readiness `/health/ready` | | |
 | Security | uid/gid/fsGroup 10001, non-root, `seccompProfile: RuntimeDefault`, drop `ALL`, no privilege escalation, read-only root filesystem, no ServiceAccount token, `priorityClassName: service` | | |

@@ -5,7 +5,8 @@
 #   components/web, optionally components/subdomain, nothing else;
 # - images: one entry ghcr.io/nick-lukashik/<name> with a digest, no newName or
 #   newTag; commonAnnotations source-sha and source-repo (deploy PR convention);
-# - the build: Deployment <name> on that image, its ConfigMap <name>-config-<hash>
+# - the build: Deployment <name> on that image (no replicas: a HorizontalPodAutoscaler
+#   with minReplicas >= 2 and a PodDisruptionBudget own them), its ConfigMap <name>-config-<hash>
 #   rendered, a route with a real host and the middlewares real-ip@file and
 #   body-limit@file on api routes only, and the parts of its kind.
 # Also: middleware body-limit of the Traefik file provider caps request bodies
@@ -95,7 +96,7 @@ for file in apps/*/prod/kustomization.yaml; do
   [[ $source_keys == 2 ]] || errors+=("commonAnnotations need <domain>/source-sha and <domain>/source-repo")
 
   # Rendered build.
-  deployment="" image="" config_ref="" next_cache="" host="" match="" middlewares="" smoke_paths="" job="" servicemonitor=""
+  deployment="" image="" config_ref="" next_cache="" host="" match="" middlewares="" smoke_paths="" job="" servicemonitor="" replicas="" hpa="" pdb=""
   configmaps=" "
   while IFS='=' read -r key value; do
     case $key in
@@ -109,6 +110,9 @@ for file in apps/*/prod/kustomization.yaml; do
       middlewares) middlewares=$value ;;
       job) job+=${job:+,}$value ;;
       servicemonitor) servicemonitor+=${servicemonitor:+,}$value ;;
+      replicas) replicas=$value ;;
+      hpa) hpa+=${hpa:+,}$value ;;
+      pdb) pdb+=${pdb:+,}$value ;;
     esac
   # In yq "," binds looser than "|": every list after a pipe is in parentheses.
   done < <(yq -N -r '
@@ -127,7 +131,10 @@ for file in apps/*/prod/kustomization.yaml; do
       ("middlewares=" + ((.spec.routes[0].middlewares // []) | map(.name) | join(" ")))
     )),
     (select(.kind == "Job") | "job=" + .metadata.name + " " + ((.spec.template.spec.containers[0].command // []) | join(" "))),
-    (select(.kind == "ServiceMonitor") | "servicemonitor=" + .metadata.name)
+    (select(.kind == "ServiceMonitor") | "servicemonitor=" + .metadata.name),
+    (select(.kind == "Deployment" and .metadata.labels["app.kubernetes.io/component"] == "server") | "replicas=" + ((.spec.replicas // "none") | tostring)),
+    (select(.kind == "HorizontalPodAutoscaler") | "hpa=" + .spec.scaleTargetRef.name + " " + (.spec.minReplicas | tostring)),
+    (select(.kind == "PodDisruptionBudget") | "pdb=" + .metadata.name)
   ' "$(rel "$rendered")")
 
   smoke_paths=$(yq -N 'select(.kind == "IngressRoute") | .metadata.annotations["nl-gitops/smoke-paths"] // ""' "$(rel "$rendered")")
@@ -137,6 +144,12 @@ for file in apps/*/prod/kustomization.yaml; do
   done
 
   [[ $deployment == "$name" ]] || errors+=("build: expected one Deployment $name, got '$deployment'")
+  # Two replicas at least: the autoscaler owns the count, the Deployment sets none.
+  [[ $replicas == none ]] || errors+=("build: the Deployment must not set replicas (the HorizontalPodAutoscaler owns them), got '$replicas'")
+  if [[ $hpa =~ ^$name\ ([0-9]+)$ ]] && ((BASH_REMATCH[1] >= 2)); then :; else
+    errors+=("build: needs HorizontalPodAutoscaler $name with minReplicas >= 2, got '$hpa'")
+  fi
+  [[ $pdb == "$name" ]] || errors+=("build: needs PodDisruptionBudget $name, got '$pdb'")
   [[ $image =~ ^${REGISTRY//./\\.}/${name}@sha256:[0-9a-f]{64}$ ]] ||
     errors+=("build: image must be $REGISTRY/$name@sha256:<digest>, got '$image'")
   [[ $config_ref == "$name"-config-* && $configmaps == *" $config_ref "* ]] ||

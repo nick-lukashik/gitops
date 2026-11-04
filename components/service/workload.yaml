@@ -16,9 +16,10 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "1"
 spec:
-  replicas: 1
+  # No replicas here: the HorizontalPodAutoscaler below owns the count (2 to 4).
   revisionHistoryLimit: 3
-  # One replica: start the new pod first, stop the old one once it is ready.
+  # Start a new pod first and stop an old one only once it is ready: a rollout
+  # never leaves fewer ready pods than before it.
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -38,6 +39,15 @@ spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
       priorityClassName: service
+      # One node today. With more nodes the replicas spread out, never blocking.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: SERVICE
+              app.kubernetes.io/component: server
       # preStop sleep 5 s + the app's own shutdown (at most 25 s).
       terminationGracePeriodSeconds: 30
       securityContext:
@@ -205,3 +215,48 @@ spec:
           protocol: UDP
         - port: 53
           protocol: TCP
+---
+# At least two replicas, so a rollout, a crash or an eviction never leaves the
+# service without a ready pod; up to four while CPU stays above 75% of the
+# request. Every service is stateless for this (service contract, "Replicas").
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: SERVICE
+  labels:
+    app.kubernetes.io/name: SERVICE
+    app.kubernetes.io/part-of: nick-lukashik
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: SERVICE
+  minReplicas: 2
+  maxReplicas: 4
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 75
+  behavior:
+    # Scale down slowly: a short quiet spell is not a reason to drop pods.
+    scaleDown:
+      stabilizationWindowSeconds: 300
+---
+# One pod at a time may go for a voluntary disruption (eviction, drain). On the
+# single node a drain waits on this, so drain it with --disable-eviction.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: SERVICE
+  labels:
+    app.kubernetes.io/name: SERVICE
+    app.kubernetes.io/part-of: nick-lukashik
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: SERVICE
+      app.kubernetes.io/component: server
