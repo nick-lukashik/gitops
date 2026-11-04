@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # shellcheck source-path=SCRIPTDIR
 # Bootstrap of a new cluster (README, step 4): Sealed Secrets with the key from
-# Bitwarden, Argo CD, repo access, AppProjects and Application "root".
+# Bitwarden, Argo CD, AppProjects and Application "root". Argo CD reads the
+# public repo over HTTPS without credentials.
 # Everything else comes from git through Argo CD.
 #
 # Re-running changes nothing: every step is skipped when its result exists.
@@ -108,12 +109,7 @@ helm_install argocd argocd https://argoproj.github.io/argo-helm argo-cd \
   "$ROOT/components/settings/settings.yaml" \
   "$ROOT/platform/argocd/values.yaml"
 
-# 4. Repo access with deploy key argocd-deploy-key.
-# shellcheck source=repo-credentials.sh
-source "$ROOT/bootstrap/repo-credentials.sh"
-ensure_repo_credentials
-
-# 5. AppProjects (root belongs to "platform"), then Application "root" on platform/.
+# 4. AppProjects (root belongs to "platform"), then Application "root" on platform/.
 if kubectl -n argocd get appproject platform >/dev/null 2>&1; then
   echo "projects: present, skipped"
 else

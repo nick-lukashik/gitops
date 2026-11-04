@@ -10,7 +10,7 @@ spec:
   destination:
     server: https://kubernetes.default.svc
   source:
-    repoURL: git@github.com:nick-lukashik/gitops.git
+    repoURL: https://github.com/nick-lukashik/gitops.git
     targetRevision: master
     path: platform/policies
   syncPolicy:

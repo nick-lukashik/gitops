@@ -7,7 +7,6 @@ Only SealedSecrets are in git; the repo is public, and a sealed value is safe th
 | Secret | Namespace | Keys | Bitwarden | Created by | Used by |
 |---|---|---|---|---|---|
 | `sealed-secrets-key` | `kube-system` | `tls.crt`, `tls.key` | `sealed-secrets-key`, `sealed-secrets-crt` | `bootstrap/install.sh` | key of the Sealed Secrets controller |
-| `repo-gitops` | `argocd` | `type`, `url`, `sshPrivateKey` | `argocd-deploy-key` | `bootstrap/install.sh` (`bootstrap/repo-credentials.sh`) | repo access of Argo CD |
 | `cf-dns01-token` | `cert-manager` | `api-token` | `cf-dns01-token` | kubeseal | ClusterIssuers `letsencrypt-staging`, `letsencrypt` |
 | `argocd-notifications-secret` | `argocd` | `telegram-token` | `ops-telegram` | kubeseal | Argo CD Notifications, service `telegram` |
 | `ops-telegram` | `monitoring` | `token` | `ops-telegram` | kubeseal | Alertmanager, receiver `telegram` |

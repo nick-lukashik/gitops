@@ -16,11 +16,11 @@ spec:
         releaseName: loki
         valueFiles:
           - $values/platform/monitoring/loki/values.yaml
-    - repoURL: git@github.com:nick-lukashik/gitops.git
+    - repoURL: https://github.com/nick-lukashik/gitops.git
       targetRevision: master
       ref: values
     # R2 key (SealedSecret loki-r2) and the ingress allow-list of Loki.
-    - repoURL: git@github.com:nick-lukashik/gitops.git
+    - repoURL: https://github.com/nick-lukashik/gitops.git
       targetRevision: master
       path: platform/monitoring/loki/config
   syncPolicy:

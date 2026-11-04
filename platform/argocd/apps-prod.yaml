@@ -10,7 +10,7 @@ spec:
   goTemplateOptions: ["missingkey=error"]
   generators:
     - git:
-        repoURL: git@github.com:nick-lukashik/gitops.git
+        repoURL: https://github.com/nick-lukashik/gitops.git
         revision: master
         directories:
           - path: apps/*/prod
@@ -35,7 +35,7 @@ spec:
     spec:
       project: prod
       source:
-        repoURL: git@github.com:nick-lukashik/gitops.git
+        repoURL: https://github.com/nick-lukashik/gitops.git
         targetRevision: master
         path: '{{ .path.path }}'
       destination:

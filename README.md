@@ -25,7 +25,7 @@ Services follow the [service runtime contract](https://github.com/nick-lukashik/
 | Service images | `images` entry with a digest in `apps/<service>/prod/kustomization.yaml` |
 | Service host | ConfigMap `route` (subdomain) in `apps/<service>/prod/service.yaml`; the root domain without it |
 | Traefik values | `platform/traefik-config/helmchartconfig.yaml` |
-| Repo access | `bootstrap/repo-credentials.sh` |
+| Repo access | none: Argo CD reads the public repo over HTTPS (`repoURL` in `platform/**/application.yaml`) |
 | Versions of the check tools | `scripts/lib.sh` |
 
 ## Public repository
@@ -94,9 +94,8 @@ Before the run:
    git push -u origin master
    ```
 
-3. The public part of the deploy key `argocd-deploy-key` is added to the repo's Deploy keys, read-only.
-4. `bootstrap/sealed-secrets.crt` is the public certificate from Bitwarden `sealed-secrets-crt`, committed.
-5. On the Mac: `kubectl`, `helm`, `openssl`, `bw`, `jq`; `infra` lies next to `gitops` (otherwise `INFRA_DIR=<path>`).
+3. `bootstrap/sealed-secrets.crt` is the public certificate from Bitwarden `sealed-secrets-crt`, committed.
+4. On the Mac: `kubectl`, `helm`, `openssl`, `bw`, `jq`; `infra` lies next to `gitops` (otherwise `INFRA_DIR=<path>`).
 
 Run from the root of `gitops`:
 
@@ -105,7 +104,7 @@ export BW_SESSION="$(bw unlock --raw)"
 bootstrap/install.sh
 ```
 
-In order, the script installs: the PriorityClasses, the Sealed Secrets key (`sealed-secrets-key` + `sealed-secrets-crt`, label `active`), the Sealed Secrets controller, Argo CD, the repo Secret with `argocd-deploy-key`, the AppProjects and Application `root`. Secrets go only to temporary files in `$TMPDIR/nl-secrets/` and are removed on exit. A re-run changes nothing: each step is skipped if its result already exists.
+In order, the script installs: the PriorityClasses, the Sealed Secrets key (`sealed-secrets-key` + `sealed-secrets-crt`, label `active`), the Sealed Secrets controller, Argo CD, the AppProjects and Application `root`. Secrets go only to temporary files in `$TMPDIR/nl-secrets/` and are removed on exit. A re-run changes nothing: each step is skipped if its result already exists.
 
 Check:
 
@@ -159,7 +158,7 @@ Every PR passes `make verify`. The merge to `master` is the rollout.
    - a sync failure reaches "Alerts" within 3 minutes (an application on a folder that does not exist, through a port-forward of Argo CD):
 
      ```sh
-     argocd app create notify-test --project prod --repo git@github.com:nick-lukashik/gitops.git \
+     argocd app create notify-test --project prod --repo https://github.com/nick-lukashik/gitops.git \
        --path apps/does-not-exist --dest-server https://kubernetes.default.svc --dest-namespace prod
      # wait for "Sync status unknown: notify-test" in the topic "Alerts", then:
      argocd app delete notify-test --yes
@@ -196,7 +195,7 @@ Every PR passes `make verify`. The merge to `master` is the rollout.
 Check that project `prod` cannot deploy to `kube-system`; nothing is created:
 
 ```sh
-argocd app create deny-test --project prod --repo git@github.com:nick-lukashik/gitops.git \
+argocd app create deny-test --project prod --repo https://github.com/nick-lukashik/gitops.git \
   --path apps/landing-web/prod --dest-server https://kubernetes.default.svc --dest-namespace kube-system
 # FATA ... application destination ... namespace kube-system is not permitted in project 'prod'
 ```

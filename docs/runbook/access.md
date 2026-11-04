@@ -65,26 +65,6 @@ kubectl -n monitoring exec alertmanager-kube-prometheus-stack-alertmanager-0 -c 
 
 ## Repo access of the public gitops
 
-`gitops` is public. Argo CD still reads it over SSH with the read-only deploy key `argocd-deploy-key` (`bootstrap/repo-credentials.sh`); that works for a public repo too. Optional: drop the key and read over HTTPS without credentials. Both URLs are already allowed in `projects/`.
+`gitops` is public: Argo CD reads it over HTTPS without credentials (`repoURL: https://github.com/nick-lukashik/gitops.git`), and the AppProjects allow only that URL. The organization has deploy keys disabled, and no repo Secret exists in `argocd`.
 
-1. PR: change the repo URL and remove the key from the bootstrap.
-
-   ```sh
-   git switch -c chore/public-repo
-   grep -rlF 'git@github.com:nick-lukashik/gitops.git' platform bootstrap |
-     xargs sed -i '' 's#git@github.com:nick-lukashik/gitops.git#https://github.com/nick-lukashik/gitops.git#'
-   git rm bootstrap/repo-credentials.sh
-   ```
-
-   In `bootstrap/install.sh` remove step 4: the comment `# 4. Repo access` and the three lines below it. `make verify`, PR, merge.
-
-2. After every application has synced with the new URL:
-
-   ```sh
-   kubectl -n argocd patch application root --type merge \
-     -p '{"spec":{"source":{"repoURL":"https://github.com/nick-lukashik/gitops.git"}}}'
-   kubectl -n argocd get applications            # all Synced
-   kubectl -n argocd delete secret repo-gitops
-   ```
-
-3. Delete the deploy key in the repo settings and the item `argocd-deploy-key` in Bitwarden.
+If the repo ever has to become private, Argo CD needs credentials first: a read-only token of a GitHub App in a SealedSecret of type `repository`, added in the same PR that changes the visibility.

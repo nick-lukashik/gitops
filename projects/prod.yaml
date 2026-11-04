@@ -12,8 +12,7 @@ metadata:
 spec:
   description: Services in namespace prod. No cluster-scoped resources.
   sourceRepos:
-    - git@github.com:nick-lukashik/gitops.git
-    # Same repo over HTTPS: it is public, the switch is optional (docs/runbook/access.md).
+    # Public repo, read over HTTPS without credentials (docs/runbook/access.md).
     - https://github.com/nick-lukashik/gitops.git
   destinations:
     - server: https://kubernetes.default.svc

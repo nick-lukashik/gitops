@@ -11,8 +11,7 @@ metadata:
 spec:
   description: Platform components; cluster-scoped resources allowed.
   sourceRepos:
-    - git@github.com:nick-lukashik/gitops.git
-    # Same repo over HTTPS: it is public, the switch is optional (docs/runbook/access.md).
+    # Public repo, read over HTTPS without credentials (docs/runbook/access.md).
     - https://github.com/nick-lukashik/gitops.git
     - https://argoproj.github.io/argo-helm
     - https://bitnami.github.io/sealed-secrets
