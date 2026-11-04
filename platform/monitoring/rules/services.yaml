@@ -73,7 +73,7 @@ spec:
             summary: "{{ $labels.namespace }}/{{ $labels.service }} has no Redis connection"
             description: The cache is bypassed and rate limits are not checked.
             runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#serviceredisdown
-        # Counts requests that got no rate-limit check: the throttler of every api lets
+        # Counts requests that got no rate-limit check: id-api's throttler lets
         # them through, id-api's sign-in limits (RateLimiter) refuse them with 503.
         - alert: RateLimitFailingOpen
           expr: sum by (namespace, service) (increase(rate_limit_fail_open_total[10m])) > 0

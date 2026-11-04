@@ -82,7 +82,7 @@ kubectl -n argocd get application $SVC-prod -w
 
 Anything changed by hand during the pause is overwritten. What has to stay goes to git through a PR first.
 
-The platform applications (`root`, `argocd`, `cert-manager`, ...) have no self-heal for their own Application: `root` syncs them only on a new commit. A platform application is paused with the same command and its name, and nothing is merged to `master` until the pause ends.
+The platform applications (`root`, `argocd`, `cert-manager`, ...) have no self-heal for their own Application: `root` syncs them only on a new commit. A platform application is paused with the same command and its name, and nothing is merged to `master` until the pause ends. The one exception is the recovery PR of [postgres.md](postgres.md).
 
 ## The migration failed
 

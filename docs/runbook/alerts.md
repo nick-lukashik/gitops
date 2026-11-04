@@ -189,7 +189,7 @@ A service has no Redis connection (warning). Its cache is bypassed (reads go to 
 
 ### RateLimitFailingOpen
 
-Requests got no rate-limit check because Redis was down or over its 500 ms budget (warning). What happened to them depends on the limiter: the throttler of every api let them through (log `Rate limiter unavailable, allowing requests`), id-api's sign-in limits refused them with 503 (log `Rate limiter unavailable, refusing`), so nobody can sign in meanwhile. It follows [ServiceRedisDown](#serviceredisdown) or a slow Redis; fix Redis.
+Requests got no rate-limit check because Redis was down or over its 500 ms budget (warning). What happened to them depends on the limiter: id-api's throttler let them through (log `Rate limiter unavailable, allowing requests`), id-api's sign-in limits refused them with 503 (log `Rate limiter unavailable, refusing`), so nobody can sign in meanwhile. It follows [ServiceRedisDown](#serviceredisdown) or a slow Redis; fix Redis.
 
 ## Business
 

@@ -34,6 +34,7 @@ A restore makes a new cluster from R2; the old one stays until the new one is ch
          name: barman-cloud.cloudnative-pg.io
          parameters:
            barmanObjectName: r2
+           # The serverName of plugins in postgres.yaml; pg if it sets none.
            serverName: pg
    ```
 
@@ -46,13 +47,13 @@ There is no old cluster to compare with, and a restored `pg` needs no change in 
 
 The order matters. The PR sets a new `serverName`, and the archiver reads the spec of the running cluster on every call: a `pg` still running when the PR syncs, empty or real, writes its WAL into the new folder within minutes. The recovery then finds that folder in use and stops ([below](#the-archive-folder-after-a-restore)). So `pg` goes first, and the PR is merged after it.
 
-1. If Argo CD has already created `pg`, look for a backup of that empty cluster. It cannot write WAL into the archive (below), but `pg-nightly` may have put a base backup there, and a restore with no target takes the newest one. If a backup shows `completed`, step 2 needs a `recoveryTarget.targetTime` before that backup.
+1. If Argo CD has already created `pg`, expect a backup of that empty cluster. It cannot write WAL into the archive (below), but `pg-nightly` has `immediate: true`, so a base backup lands there as soon as the cluster exists, and a restore with no target takes the newest one. If a backup shows `completed`, step 2 needs `recoveryTarget.backupID`: the newest id under `pg/pg/base/` in R2 from before the loss. Do not use a `targetTime` for this: a time just before the empty backup lies past the last commit in the WAL, and recovery stops with `FATAL: recovery ended before configured recovery target was reached`. An id with no time replays to the end of the WAL and promotes.
 
    ```sh
    kubectl -n data get backups
    ```
 
-2. Open a PR that changes `postgres.yaml` and do not merge it yet: `recovery` instead of `initdb`, the folder to read and a new folder to write ([below](#the-archive-folder-after-a-restore)). Without `recoveryTarget` the restore replays all the WAL in R2, up to the last archived segment.
+2. Open a PR that changes `postgres.yaml` and do not merge it yet: `recovery` instead of `initdb`, the folder to read and a new folder to write ([below](#the-archive-folder-after-a-restore)). Without `recoveryTarget` the restore replays all the WAL in R2, up to the last archived segment. Coming from `pg-restore` to undo a mistake, use the same `recoveryTarget` you checked there: without it the restore replays the mistake too, since `pg` archived it. A `targetTime` is only for a moment you chose, earlier than the last transaction.
 
    ```yaml
    bootstrap:
@@ -109,7 +110,7 @@ The order matters. The PR sets a new `serverName`, and the archiver reads the sp
 
 ### The archive folder after a restore
 
-Backups and WAL go to `s3://nl-pg-backups/pg/<serverName>/`. `serverName` is the cluster name unless `plugins` sets it, so the first folder is `pg/pg`. A restored cluster starts a new timeline, and Barman refuses a folder that already holds an archive: the pod stays in `Setting up primary`, its log says `Expected empty archive`. Do not skip the check with the annotation `cnpg.io/skipEmptyWalArchiveCheck`: the new timeline would mix with the old one.
+Backups and WAL go to `s3://nl-pg-backups/pg/<serverName>/`. `serverName` is the cluster name unless `plugins` sets it, so the first folder is `pg/pg`. A restored cluster starts a new timeline, and Barman refuses a folder that already holds an archive: the cluster stays in `Setting up primary`, and the log of the `pg-1-full-recovery` job pod says `Expected empty archive`. Do not skip the check with the annotation `cnpg.io/skipEmptyWalArchiveCheck`: the new timeline would mix with the old one.
 
 | In the restored cluster | `serverName` |
 |---|---|
