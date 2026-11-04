@@ -19,7 +19,7 @@ test.describe('the log check @failure', () => {
         ],
         [
             'an email in a URL',
-            `{"url":"/users?email=${email.replace('@', '%40')}"}`,
+            `{"url":"/users?email=${encodeURIComponent(email)}"}`,
         ],
         [
             'a sign-in code',
