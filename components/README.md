@@ -45,5 +45,6 @@ No CPU limit: a CFS quota throttles the Node.js event loop during bursts (slow r
 | -1 | SealedSecret `<name>-secrets` (Argo CD waits until the Secret is decrypted) |
 | 0 | ConfigMap `<name>-config-<hash>`, Service, IngressRoute, NetworkPolicies, ServiceMonitor; the api migrate Job (Sync hook) runs and must succeed |
 | 1 | Deployment |
+| 2 | HorizontalPodAutoscaler (it is Degraded while its Deployment does not exist, which would stop the first sync of a new service) |
 
 The migrate Job is a `Sync` hook in wave 0, not `PreSync`: `PreSync` runs before the ConfigMap and the SealedSecret of the same sync exist (the first sync of a service, and every config change, since the ConfigMap name carries a content hash), so the Job could never start. The order above gives the same guarantee: the new version rolls out only after the migration succeeded. `PruneLast=true` (ApplicationSet `apps-prod`) keeps the old ConfigMap until the new pods run.
