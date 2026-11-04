@@ -6,6 +6,11 @@ kind: Application
 metadata:
   name: data
   namespace: argocd
+  annotations:
+    # The API server fills defaults into the volume claim templates of the
+    # StatefulSets, CNPG into the lists of the Cluster: a client-side diff
+    # shows both as OutOfSync forever. The server-side diff sees them too.
+    argocd.argoproj.io/compare-options: ServerSideDiff=true
 spec:
   project: platform
   destination:
