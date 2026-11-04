@@ -4,11 +4,11 @@ SHELL := bash
 .SHELLFLAGS := -euo pipefail -c
 .DEFAULT_GOAL := verify
 
-.PHONY: verify render static secrets domain kustomize helm images apps netpol kubeconform rules alertmanager alloy shell clean
+.PHONY: verify render static secrets domain destinations kustomize helm images apps netpol kubeconform rules alertmanager alloy shell clean
 
 verify: static render images apps netpol kubeconform rules alertmanager alloy ## all checks
 
-static: secrets domain shell ## checks on files in git
+static: secrets domain destinations shell ## checks on files in git
 
 render: kustomize helm ## render manifests into .cache/render
 
@@ -17,6 +17,9 @@ secrets: ## no plain Secret with data
 
 domain: ## the domain only in components/settings/settings.yaml
 	scripts/check-domain.sh
+
+destinations: ## every Application goes to a destination of its AppProject
+	scripts/check-destinations.sh
 
 shell: ## shellcheck and actionlint
 	scripts/check-shell.sh

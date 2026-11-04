@@ -51,6 +51,7 @@ Only Docker is needed: the tools run in containers pinned by digest. CI runs on 
 
 - no `kind: Secret` with data in git;
 - the domain only in `components/settings/settings.yaml`;
+- every Argo CD Application goes to a server and namespace of its AppProject (`scripts/check-destinations.sh`), otherwise Argo CD refuses it;
 - `shellcheck` and `actionlint`;
 - `kustomize build` of every folder with a `kustomization.yaml`, the service templates `apps/_example-web` and `apps/_example-api` included;
 - `helm template` of every Helm application with its values, and of the Traefik bundled with K3s with the `HelmChartConfig`;
