@@ -23,9 +23,9 @@ configMapGenerator:
 # the summary of job "image" of notifications-api; then the deploy PR keeps them current.
 images:
   - name: ghcr.io/nick-lukashik/notifications-api
-    digest: sha256:c43328c6ca7045b4bc6229797a4a914147c0640803b996a50bb338bf38e1f2f7
+    digest: sha256:9f7fa86e2405ae61ebb5b972fb871cf75a6c7f10ba64a9cb0263fea04819118b
 commonAnnotations:
-  nick-lukashik.com/source-sha: "2629d4a21f27ca8481743c0641cd8a43f8249cfb"
+  nick-lukashik.com/source-sha: "c2bcf9f9841ded809a9c9660a18bb34f66ba2027"
   nick-lukashik.com/source-repo: nick-lukashik/notifications-api
 patches:
   # It calls other apis (JWKS of id-api at least): the one label for both
@@ -43,3 +43,26 @@ patches:
           metadata:
             labels:
               nick-lukashik.com/api-client: "true"
+  # SMTP to Resend (smtps, port 465) next to public HTTPS (components/api):
+  # the same public addresses, the one more port.
+  - target:
+      kind: NetworkPolicy
+      labelSelector: app.kubernetes.io/component=server
+    patch: |-
+      - op: add
+        path: /spec/egress/-
+        value:
+          to:
+            - ipBlock:
+                cidr: 0.0.0.0/0
+                except:
+                  - 0.0.0.0/8
+                  - 10.0.0.0/8
+                  - 100.64.0.0/10
+                  - 127.0.0.0/8
+                  - 169.254.0.0/16
+                  - 172.16.0.0/12
+                  - 192.168.0.0/16
+          ports:
+            - port: 465
+              protocol: TCP
