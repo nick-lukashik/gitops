@@ -12,9 +12,9 @@ domain: nick-lukashik.com
 telegram:
   # Not secret. Values come from Bitwarden item ops-telegram-topics (SECRETS.md).
   # chatId must be non-zero or Alertmanager rejects its config; -1 is a placeholder.
-  chatId: -1
+  chatId: -1004441923141
   # message_thread_id of each forum topic; 0 posts to the General topic.
   topics:
-    alerts: 0
-    deploys: 0
-    digests: 0
+    alerts: 3
+    deploys: 4
+    digests: 5
