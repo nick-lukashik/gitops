@@ -1,0 +1,32 @@
+# The data stores of the services (stage E3): Postgres (one CNPG cluster, a
+# database and a role per api), Redis (id-api) and RabbitMQ (events), all in
+# namespace data. Secrets: SECRETS.md, "Data stores".
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: data
+  namespace: argocd
+spec:
+  project: platform
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: data
+  source:
+    repoURL: https://github.com/nick-lukashik/gitops.git
+    targetRevision: master
+    path: platform/data/stores
+  syncPolicy:
+    automated:
+      # Never prune here: a volume claim or the cluster must not go because a
+      # file moved. Removing a store is a deliberate, manual step.
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+      - SkipDryRunOnMissingResource=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 15s
+        factor: 2
+        maxDuration: 5m

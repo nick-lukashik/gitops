@@ -14,7 +14,7 @@ Only SealedSecrets are in git; the repo is public, and a sealed value is safe th
 | `loki-r2` | `monitoring` | `S3_ENDPOINT`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | `r2-loki` (`uri`, `username`, `password`) | kubeseal | Loki: chunks and index in R2 bucket `nl-loki`. The endpoint holds the account ID, so it is sealed too |
 | `grafana-admin` | `monitoring` | `admin-user`, `admin-password` | not stored: random, nobody signs in with it | kubeseal | built-in Grafana admin |
 | `grafana-auth-proxy` | `monitoring` | `whitelist` | not stored: the pod network of the cluster | kubeseal | `auth.proxy.whitelist` of Grafana (E4) |
-| `<service>-secrets` | `prod` | secret env of the service (`KEY`) | `<service>-secrets` | kubeseal ([Service secrets](#service-secrets)) | `envFrom` of the pods and the api migrate Job |
+| `<service>-secrets` | `prod` | secret env of the service (`KEY`) | `<service>-secrets`; for the account services generated and sealed with the data stores, plus `google-oauth` and `resend-smtp` merged in | kubeseal ([Service secrets](#service-secrets), [Data stores](#data-stores)) | `envFrom` of the pods and the api migrate Job |
 
 Not secrets, but kept next to them in Bitwarden:
 
@@ -99,6 +99,39 @@ kubectl get nodes -o jsonpath='{.items[0].spec.podCIDR}' |
 ```
 
 After any command: `make verify`, commit the `*.sealedsecret.yaml` file, PR.
+
+## Data stores
+
+Namespace `data` (`platform/data/stores/secrets.sealedsecret.yaml`). Everything but the R2 key is random and stored nowhere in the clear: the values were generated and sealed in one step (stage E3), and the services' URLs in `<service>-secrets` carry the same passwords. To change one, generate a new value and seal both sides together.
+
+| Secret | Keys | Used by |
+|---|---|---|
+| `pg-id`, `pg-notifications`, `pg-wallet`, `pg-pay` | `username`, `password` (`kubernetes.io/basic-auth`) | the database owner of each api; `pg-id` bootstraps the cluster |
+| `redis-auth` | `password` | `requirepass` of Redis (id-api) |
+| `rabbitmq-definitions` | `definitions.json` | RabbitMQ users, one per api (SHA-256 password hashes), and their permissions |
+| `pg-r2` | `ACCESS_KEY_ID`, `ACCESS_SECRET_KEY`, `ENDPOINT` | Barman Cloud: base backups and WAL to R2 `nl-pg-backups` |
+
+`pg-r2` from the R2 key `r2-pg-backups`, merged into the file without touching the other secrets:
+
+```sh
+f=platform/data/stores/pg-r2.yaml
+"$S" bundle ENDPOINT=r2-pg-backups:uri ACCESS_KEY_ID=r2-pg-backups:username ACCESS_SECRET_KEY=r2-pg-backups:password |
+  kubectl create secret generic pg-r2 -n data --from-env-file=/dev/stdin --dry-run=client -o yaml |
+  kubeseal --cert "$CRT" --format yaml >"$f"
+```
+
+Then replace the `pg-r2` document at the end of `secrets.sealedsecret.yaml` with the content of `$f` and delete `$f`. The URI of the item is the S3 endpoint without a path (`https://<account-id>.r2.cloudflarestorage.com`): the sidecar takes it as `AWS_ENDPOINT_URL_S3`.
+
+A value from Bitwarden that joins an existing `<service>-secrets` (Google, Resend) is merged with `kubeseal --merge-into`: the other keys stay as they are and are never decrypted.
+
+```sh
+"$S" bundle GOOGLE_CLIENT_ID=google-oauth:username GOOGLE_CLIENT_SECRET=google-oauth:password |
+  kubectl create secret generic id-api-secrets -n prod --from-env-file=/dev/stdin --dry-run=client -o yaml |
+  kubeseal --cert "$CRT" --format yaml --merge-into apps/id-api/prod/id-api-secrets.sealedsecret.yaml
+"$S" get resend-smtp:password | tr -d '\n' | { read -r k; printf 'smtps://resend:%s@smtp.resend.com:465' "$k"; } |
+  kubectl create secret generic notifications-api-secrets -n prod --from-file=SMTP_URL=/dev/stdin --dry-run=client -o yaml |
+  kubeseal --cert "$CRT" --format yaml --merge-into apps/notifications-api/prod/notifications-api-secrets.sealedsecret.yaml
+```
 
 ## Service secrets
 

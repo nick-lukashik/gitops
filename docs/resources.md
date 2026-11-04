@@ -20,14 +20,17 @@ Request and limit of memory from the values in `platform/`. Short Jobs (`startup
 | Alloy 128/512 + config-reloader 32/64 | `monitoring-node` | 160 MiB | 576 MiB |
 | Grafana | `monitoring` | 256 MiB | 512 MiB |
 | K3s: CoreDNS, metrics-server, local-path, svclb (estimate) | `kube-system` | 200 MiB | 300 MiB |
-| **Platform, total** | | **≈ 3.8 GiB** | **≈ 8.0 GiB** |
+| CloudNativePG operator 96/256, Barman Cloud plugin 64/128 | `cnpg-system` | 160 MiB | 384 MiB |
+| Postgres 512/1024 + Barman sidecar 64/256 | `data` | 576 MiB | 1280 MiB |
+| RabbitMQ 256/512, Redis 64/256 | `data` | 320 MiB | 768 MiB |
+| **Platform, total** | | **≈ 4.8 GiB** | **≈ 10.4 GiB** |
 | Services: ResourceQuota `memory` | `prod` | 4 GiB | 8 GiB |
-| **All** | | **≈ 7.8 GiB (63%)** | **≈ 16.0 GiB (128%)** |
+| **All** | | **≈ 8.8 GiB (70%)** | **≈ 18.4 GiB (147%)** |
 
 - The requests fit with room to spare. The limits exceed the node memory by a quarter: not all components reach their limit at once, and under pressure the kubelet evicts pods of lower priority first (`batch`, then `service`).
 - Every service runs at least two replicas (HorizontalPodAutoscaler 2 to 4 on CPU, `components/service`), so a service costs twice its pod in the `prod` quota and more while it is scaled out. When the quota is full, the autoscaler cannot add pods: that is the cap, and the quota grows in a PR when it is reached.
 - A container in `prod` without its own resources gets a 128 MiB request and a 256 MiB limit (LimitRange `defaults`). Services set their own in the components: web 128 MiB request / 384 MiB limit, api 192 MiB / 512 MiB, the api migrate Job 128 MiB / 512 MiB; a CPU request only, no CPU limit ([components/README.md](../components/README.md)).
-- Stage `E3-core` adds Postgres (CNPG), RabbitMQ and Redis, roughly another 2–3.5 GiB of requests. Before it, review the `prod` quota and the Prometheus limits.
+- Stage `E3-core` added the data stores (`platform/data`, about 1 GiB of requests). The services of `prod` with the account services: about 2 GiB of requests at two replicas each, inside the quota.
 
 ## Disk
 
@@ -40,6 +43,9 @@ One disk holds etcd, the container images, the container logs and every volume. 
 | Loki WAL, index being built, index cache | `emptyDir` | `sizeLimit: 5Gi`, enforced by the kubelet (the pod is evicted, the logs in R2 stay) |
 | Alertmanager | `local-path` volume 1 GiB | silences and notification state, small |
 | Grafana | `local-path` volume 1 GiB | the Grafana database, small |
+| Postgres | `local-path` volume 10 GiB | the four databases; WAL is archived to R2 `nl-pg-backups` and recycled, base backups kept 14 days there |
+| RabbitMQ | `local-path` volume 2 GiB | queues; `disk_free_limit` 1 GB blocks publishers before the disk fills |
+| Redis | `local-path` volume 1 GiB | refresh tokens and limits, `maxmemory` 192 MB, append-only file |
 | Container logs | `/var/log/pods` | kubelet rotation, 10 MiB × 5 files per container (defaults) |
 | `emptyDir` of services | node disk | `/tmp` 64 MiB, `/app/.next/cache` 512 MiB (`sizeLimit`) |
 
@@ -52,7 +58,7 @@ Protection of the disk (and of etcd on it):
 
 | PriorityClass | Value | Who |
 |---|---|---|
-| `platform-critical` | 100000 | Argo CD, Sealed Secrets, cert-manager, monitoring; at stage 3 also CNPG and RabbitMQ |
+| `platform-critical` | 100000 | Argo CD, Sealed Secrets, cert-manager, monitoring, CNPG, Postgres, RabbitMQ, Redis |
 | `service` | 1000, `globalDefault` | services of `prod` and everything without a class |
 | `batch` | 100, never preempts others | drills, one-off Jobs |
 

@@ -1,7 +1,8 @@
 # App-of-apps: Application "root" (bootstrap/root.yaml) syncs this list.
 # Order by argocd.argoproj.io/sync-wave; root waits for each wave to be healthy:
 #   -20 projects, -15 policies, -10 sealed-secrets argocd,
-#   -5 cert-manager kube-prometheus-stack (CRDs the rest uses),
+#   -5 cert-manager kube-prometheus-stack cnpg (CRDs the rest uses),
+#   -4 barman-cloud (needs cert-manager and cnpg),
 #    0 everything else. The last wave is not waited for, so an app that waits
 #      for a secret (grafana) never blocks the others.
 apiVersion: kustomize.config.k8s.io/v1beta1
@@ -12,6 +13,9 @@ resources:
   - sealed-secrets/application.yaml
   - argocd/application.yaml
   - cert-manager/application.yaml
+  - data/cnpg/application.yaml
+  - data/barman-cloud/application.yaml
+  - data/application.yaml
   - monitoring/kube-prometheus-stack/application.yaml
   - traefik-config/application.yaml
   - monitoring/loki/application.yaml

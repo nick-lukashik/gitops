@@ -1,0 +1,154 @@
+# One Postgres 18 for every api, each with its own database and role: a
+# service sees only its own tables. One instance on the one node; base backups
+# every night and WAL continuously to R2 (nl-pg-backups) give point-in-time
+# recovery for 14 days (docs/runbook/postgres.md).
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: pg
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.3-minimal-trixie
+  priorityClassName: platform-critical
+  # The database "id" and its owner come with the cluster; the others are
+  # managed roles and Database objects below.
+  bootstrap:
+    initdb:
+      database: id
+      owner: id
+      secret:
+        name: pg-id
+  managed:
+    roles:
+      - name: notifications
+        ensure: present
+        login: true
+        passwordSecret:
+          name: pg-notifications
+      - name: wallet
+        ensure: present
+        login: true
+        passwordSecret:
+          name: pg-wallet
+      - name: pay
+        ensure: present
+        login: true
+        passwordSecret:
+          name: pg-pay
+  postgresql:
+    parameters:
+      # 4 apis x 4 replicas x 5 connections (DATABASE_POOL_MAX) = 80, plus the
+      # migrate Jobs and the operator. PgBouncer (CNPG Pooler) when this is tight.
+      max_connections: "200"
+      shared_buffers: 128MB
+      work_mem: 4MB
+      log_min_duration_statement: "1000"
+  storage:
+    storageClass: local-path
+    size: 10Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      memory: 1Gi
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: r2
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: notifications
+spec:
+  cluster:
+    name: pg
+  name: notifications
+  owner: notifications
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: wallet
+spec:
+  cluster:
+    name: pg
+  name: wallet
+  owner: wallet
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: pay
+spec:
+  cluster:
+    name: pg
+  name: pay
+  owner: pay
+---
+# R2 through the S3 API. The endpoint carries the account ID, so it comes from
+# the sealed pg-r2 like the key; R2 needs the checksums only when required.
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: r2
+spec:
+  retentionPolicy: 14d
+  configuration:
+    destinationPath: s3://nl-pg-backups/pg
+    s3Credentials:
+      accessKeyId:
+        name: pg-r2
+        key: ACCESS_KEY_ID
+      secretAccessKey:
+        name: pg-r2
+        key: ACCESS_SECRET_KEY
+    wal:
+      compression: gzip
+    data:
+      compression: gzip
+  instanceSidecarConfiguration:
+    env:
+      - name: AWS_ENDPOINT_URL_S3
+        valueFrom:
+          secretKeyRef:
+            name: pg-r2
+            key: ENDPOINT
+      - name: AWS_REQUEST_CHECKSUM_CALCULATION
+        value: when_required
+      - name: AWS_RESPONSE_CHECKSUM_VALIDATION
+        value: when_required
+    resources:
+      requests:
+        cpu: 10m
+        memory: 64Mi
+      limits:
+        memory: 256Mi
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: pg-nightly
+spec:
+  # 03:00 UTC (seconds first).
+  schedule: "0 0 3 * * *"
+  backupOwnerReference: self
+  cluster:
+    name: pg
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
+  immediate: true
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: pg
+spec:
+  selector:
+    matchLabels:
+      cnpg.io/cluster: pg
+  podMetricsEndpoints:
+    - port: metrics
