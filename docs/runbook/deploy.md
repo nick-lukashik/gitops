@@ -10,14 +10,14 @@ SVC=landing-web
 
 ## Review a change before the merge
 
-A deploy PR first: look at the check `e2e` and at the deployed set it tested ([e2e/README.md](../../e2e/README.md)). The `master` ruleset does not require that check, so GitHub lets the merge through whatever it says.
+A deploy PR first: look at the check `e2e` and at the deployed set it tested ([e2e/README.md](../../e2e/README.md)). The `master` ruleset requires that check, so GitHub holds the merge until it passes; only the owner's bypass gets past it.
 
 ```sh
 gh pr checks <PR number>        # e2e: pass
 scripts/versions.sh             # on master: the deployed set now
 ```
 
-- Red or still running: do not merge. A failed run has the artifact `e2e-report`: the Playwright report, traces and `compose.log`.
+- Red or still running: do not merge. A failed run has the artifact `e2e-report-deploy`: the Playwright report, traces and `compose.log`.
 - The job summary of the run lists the set under test: service, source commit, digest. It must show this PR's digest for this service and, for the others, what `scripts/versions.sh` prints on `master`. If another deploy was merged after the run, the set is out of date: `gh pr update-branch <PR number>` starts a new run (a re-run would test the same merge commit).
 
 Then, for any PR:

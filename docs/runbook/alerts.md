@@ -55,7 +55,7 @@ Common causes: the `cf-dns01-token` was revoked or lost a zone, or Let's Encrypt
 
 ### TraefikHigh5xxRate
 
-More than 5% of the responses of one router are 5xx (warning). The router name is `<namespace>-<service>@kubernetescrd`.
+More than 5% of the responses of one router are 5xx (warning). The router name is `<namespace>_<service>_0@kubernetescrd`, for example `prod_landing-web_0@kubernetescrd`.
 
 ```sh
 kubectl -n prod get pods -l app.kubernetes.io/name=<service>
@@ -157,7 +157,7 @@ Requests of a service end with 503 because Postgres is over a time budget, locke
 
 ### ServiceBrokerDown
 
-A service has no RabbitMQ connection (warning). Writes still succeed and their events wait in the outbox; it reconnects by itself. Check the broker pod and the service log (`RabbitMQ connection lost`). If it lasts, [OutboxEventsStuck](#outboxeventsstuck) follows.
+A service has no RabbitMQ connection (warning). Writes still succeed and their events wait in the outbox; it reconnects by itself. Check the broker pod and the service log (`RabbitMQ disconnected; events wait in the outbox`). If it lasts, [OutboxEventsStuck](#outboxeventsstuck) follows.
 
 ### ServiceConsumerDown
 

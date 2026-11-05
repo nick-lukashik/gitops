@@ -15,12 +15,13 @@ Only SealedSecrets are in git; the repo is public, and a sealed value is safe th
 | `grafana-admin` | `monitoring` | `admin-user`, `admin-password` | not stored: random, nobody signs in with it | kubeseal | built-in Grafana admin |
 | `grafana-auth-proxy` | `monitoring` | `whitelist` | not stored: the pod network of the cluster | kubeseal | `auth.proxy.whitelist` of Grafana (E4) |
 | `<service>-secrets` | `prod` | secret env of the service (`KEY`) | `<service>-secrets`; for the account services generated and sealed with the data stores, plus `google-oauth` and `resend-smtp` merged in | kubeseal ([Service secrets](#service-secrets), [Data stores](#data-stores)) | `envFrom` of the pods and the api migrate Job |
+| `digests-secrets` | `prod` | `GA_PROPERTY_ID`, `GA_SERVICE_ACCOUNT_JSON`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `TELEGRAM_TOPIC_ID` | `ga-digest` (the JSON key, in its notes), `ops-telegram`; the chat and topic ids as in `ops-telegram-topics` | kubeseal | `envFrom` of CronJob `digests` |
 
 Not secrets, but kept next to them in Bitwarden:
 
 | Value | Bitwarden | Goes to |
 |---|---|---|
-| ids of the supergroup and of the topics "Alerts", "Deploys", "Digests" (`message_thread_id`) | `ops-telegram-topics` | `components/settings/settings.yaml`, `telegram.chatId` and `telegram.topics.*`, an ordinary PR |
+| ids of the supergroup and of the topics "Alerts", "Deploys", "Digests" (`message_thread_id`) | `ops-telegram-topics` | `components/settings/settings.yaml`, `telegram.chatId` and `telegram.topics.*`, an ordinary PR. The digest does not read them: its chat and topic are sealed in `digests-secrets`, and nothing reads `telegram.topics.digests`. To move the digest, merge a new `TELEGRAM_TOPIC_ID` into that file with `kubeseal --merge-into` ([Data stores](#data-stores)) |
 | `admin` password of Argo CD | `argocd-admin` | typed into `argocd account update-password` (`docs/runbook/access.md`) |
 
 Placeholder files in the repo have `spec.encryptedData: {}`. Until a placeholder is replaced, the controller creates an empty Secret: cert-manager issues no certificate, Alertmanager sends nothing, Grafana does not start without `grafana-admin`, Loki does not start without `loki-r2`.

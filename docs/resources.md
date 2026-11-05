@@ -73,9 +73,11 @@ Traefik, CoreDNS and metrics-server keep `system-cluster-critical` from K3s.
 | `cert-manager` | `restricted` | every pod of the chart passes |
 | `monitoring` | `restricted` | Prometheus, Alertmanager, Grafana, Loki, operator, kube-state-metrics; the root init container of Grafana is off |
 | `traefik` | `restricted` | no pods: TLSStore, TLSOption, Certificate and the Origin Pulls CA |
+| `cnpg-system` | `restricted` | the CloudNativePG operator and its Barman Cloud plugin |
+| `data` | `restricted` | Postgres, RabbitMQ and Redis (`platform/data/stores`) |
 | `monitoring-node` | `privileged` | node-exporter: `hostNetwork`, `hostPID`, hostPath `/`; Alloy: hostPath of the journal and positions. `baseline` forbids all of that, hence `privileged`, not `baseline` |
 | `kube-system` | no labels (K3s: `privileged`) | Traefik, svclb (`NET_ADMIN`), local-path helper pods (hostPath), Sealed Secrets. The namespace belongs to K3s |
 
 ## Network policies
 
-Default deny in `prod` (both ways), `monitoring` and `monitoring-node` (ingress), allow-lists per component: [README.md](../README.md#network).
+Default deny in `prod` (both ways), `monitoring`, `monitoring-node` and `data` (ingress), allow-lists per component; `cnpg-system` has no policy: [README.md](../README.md#network).

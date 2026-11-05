@@ -97,7 +97,7 @@ In this order: `id` first, so the person can no longer sign in, then the inbox, 
    SQL
    ```
 
-   The next refresh of any of those sessions finds no row and is refused, so every site signs the person out; an access token already issued works for up to 5 minutes more (`.github/docs/identity.md`, "Revocation latency").
+   The next refresh of any of those sessions finds no row and is refused, so every site signs the person out; an access token already issued works for up to 5 minutes more (`.github/docs/identity.md`, "Revocation latency"). This SQL leaves Redis alone, so until that refresh `GET /api/v1/me/session` still answers active and the pages keep opening: a deletion does not stop a session at once, the way a sign-out does.
 2. `notifications`. The other delivery records hold a sign-in request id or a payment id, never the address or the text.
 
    ```sh
