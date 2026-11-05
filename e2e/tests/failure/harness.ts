@@ -13,7 +13,7 @@ import {
 } from '@playwright/test'
 import { ui } from '../copy'
 import { everySignInCode, signInCode } from '../mailpit'
-import { E2E } from '../stack'
+import { E2E, SESSION_COOKIES } from '../stack'
 
 const run = promisify(execFile)
 
@@ -297,7 +297,7 @@ export async function expectAccount(on: Page, email: string) {
 
 /** The session cookie as it is now. */
 export async function sessionCookie({ context }: Person) {
-    const cookie = (await context.cookies()).find(item => item.name === '__Host-id_session')
+    const cookie = (await context.cookies()).find(item => SESSION_COOKIES.includes(item.name))
     expect(cookie, 'the session cookie').toBeDefined()
     return cookie as Cookie
 }

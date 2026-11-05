@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { type BrowserContext, type Cookie, expect, type Page, test } from '@playwright/test'
 import { subjects, ui } from './copy'
 import { signInCode, subjectsTo } from './mailpit'
+import { SESSION_COOKIES } from './stack'
 
 // One person's way through the deployed set, in one browser: every test starts
 // where the previous one ended, and a failed one skips the rest.
@@ -168,7 +169,7 @@ test('one receipt email per payment', async ({ request }) => {
 
 test('sign-out ends the session', async () => {
     await page.goto('/account')
-    const session = (await context.cookies()).find(cookie => cookie.name === '__Host-id_session') as Cookie
+    const session = (await context.cookies()).find(cookie => SESSION_COOKIES.includes(cookie.name)) as Cookie
     expect(session, 'the session cookie').toMatchObject({
         secure: true,
         httpOnly: true,
@@ -182,7 +183,7 @@ test('sign-out ends the session', async () => {
         })
         .click()
     await expect(page).toHaveURL(/\/login$/)
-    expect((await context.cookies()).map(cookie => cookie.name)).not.toContain('__Host-id_session')
+    expect((await context.cookies()).filter(cookie => SESSION_COOKIES.includes(cookie.name))).toEqual([])
     await page.goto('/account')
     await expect(page).toHaveURL(/\/login$/)
 

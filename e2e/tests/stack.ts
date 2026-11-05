@@ -24,6 +24,12 @@ export const MAILPIT_URL = `http://127.0.0.1:${place.E2E_MAILPIT_PORT}`
 /** The second id-web of ../compose.failure.yaml. Cookies ignore the port: a browser's session is on both. */
 export const WEB_2_URL = `https://localhost:${place.E2E_WEB_2_PORT}`
 
+/** The session cookie of id-web: both names while the digests of id-web in this repo move to the shared cookie. */
+export const SESSION_COOKIES = [
+    '__Secure-nl_session',
+    '__Host-id_session',
+]
+
 export const E2E = path.resolve(import.meta.dirname, '..')
 const REPO = path.resolve(E2E, '..')
 const OUTPUT = path.join(import.meta.dirname, 'test-results')

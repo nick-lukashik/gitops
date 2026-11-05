@@ -4,7 +4,6 @@ kind: Kustomization
 namespace: prod
 resources:
   - service.yaml
-  - landing-web-secrets.sealedsecret.yaml
 components:
   # Root domain: service (with the host) and the kind, no subdomain.
   - ../../../components/service
