@@ -213,6 +213,43 @@ tests:
               description: Users get no sign-in code (notifications-api unreachable or not sending), so they cannot sign in.
               runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#authcodedeliveryfailing
 
+  - name: sign-in codes reach half of the daily budget, then 80% of it, counted over the pods
+    interval: 1m
+    input_series:
+      - series: 'auth_code_deliveries_total{namespace="prod",service="id-api",pod="a",result="accepted"}'
+        values: '0+1x70'
+      - series: 'auth_code_deliveries_total{namespace="prod",service="id-api",pod="a",result="failed"}'
+        values: '0x70'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: AuthCodeBudgetHalfUsed
+        exp_alerts: []
+      - eval_time: 40m
+        alertname: AuthCodeBudgetHalfUsed
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              namespace: prod
+              service: id-api
+            exp_annotations:
+              summary: prod/id-api has sent half of its daily budget of sign-in codes
+              description: 35 of 70 sign-in codes went out in 24 hours, far more than usual.
+              runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#authcodebudgethalfused
+      - eval_time: 50m
+        alertname: AuthCodeBudgetNearlyUsed
+        exp_alerts: []
+      - eval_time: 60m
+        alertname: AuthCodeBudgetNearlyUsed
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              namespace: prod
+              service: id-api
+            exp_annotations:
+              summary: prod/id-api has nearly used its daily budget of sign-in codes
+              description: 56 of 70 sign-in codes went out in 24 hours. At 70 sign-in by code stops for everyone.
+              runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#authcodebudgetnearlyused
+
   - name: an email job failed for good alerts at once, for an hour
     interval: 1m
     input_series:

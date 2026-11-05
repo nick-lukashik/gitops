@@ -109,6 +109,10 @@ services:
       INTERNAL_API_TOKEN: ${ID_INTERNAL_TOKEN:?}
       NOTIFICATIONS_URL: http://notifications-api:3000
       NOTIFICATIONS_INTERNAL_TOKEN: ${NOTIFICATIONS_INTERNAL_TOKEN:?}
+      # Every test asks for its codes from one address.
+      LOGIN_CODES_PER_IP_HOUR: 100000
+      LOGIN_CODES_PER_IP_DAY: 100000
+      LOGIN_CODES_PER_DAY: 100000
     depends_on:
       id-api-migrate:
         condition: service_completed_successfully
