@@ -14,6 +14,8 @@
 # at 1 MiB (service runtime contract, "Request size").
 # <name> is the folder name without the leading "_" of the templates. Both
 # templates must exist, and the ApplicationSet must keep skipping apps/_*.
+# A scheduled job (JOBS below) has no server: its own CronJob and NetworkPolicy, the
+# same image and deploy annotation rules, no components.
 # Written for bash 3.2 (macOS) too: no associative arrays.
 # shellcheck source=lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
@@ -21,6 +23,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # Not built from the service image contract (a third-party image with its own
 # manifests), space-separated: " <name> <name> ". None today.
 THIRD_PARTY=" "
+# Built from the service image contract, but a CronJob rather than a server.
+JOBS=" digests "
 TEMPLATES=(_example-web _example-api)
 REGISTRY=ghcr.io/nick-lukashik
 C=../../../components
@@ -36,6 +40,72 @@ limit=$(yq -r '.spec.valuesContent | from_yaml | .providers.file.content | from_
   .http.middlewares["body-limit"].buffering.maxRequestBodyBytes // ""' platform/traefik-config/helmchartconfig.yaml)
 [[ $limit == 1048576 ]] || fail "Traefik middleware body-limit must set buffering.maxRequestBodyBytes: 1048576, got '$limit'"
 
+# The rules of a scheduled job. Prints what is wrong, one line each.
+job_errors() {
+  local app=$1 file=$2 rendered=$3
+  local components images image_name image_digest image_extra source_keys
+  local crons servers image time_zone concurrency non_root read_only memory key value
+  while IFS='=' read -r key value; do
+    case $key in
+      components) components=$value ;;
+      images) images=$value ;;
+      image_name) image_name=$value ;;
+      image_digest) image_digest=$value ;;
+      image_extra) image_extra=$value ;;
+      source_keys) source_keys=$value ;;
+    esac
+  done < <(yq -r '
+    "components=" + ((.components // []) | join(" ")),
+    "images=" + ((.images // []) | length | tostring),
+    "image_name=" + (.images[0].name // ""),
+    "image_digest=" + (.images[0].digest // ""),
+    "image_extra=" + ((.images[0] // {}) | keys | map(select(. != "name" and . != "digest")) | join(" ")),
+    "source_keys=" + ((.commonAnnotations // {}) | keys | map(select(test("/source-(sha|repo)$"))) | length | tostring)
+  ' "/repo/$file")
+  [[ -z $components ]] || echo "components: a job has none, got $components"
+  [[ $images == 1 ]] || echo "images: expected one entry, found $images"
+  [[ $image_name == "$REGISTRY/$app" ]] || echo "images[0].name must be $REGISTRY/$app, got '$image_name'"
+  [[ $image_digest =~ ^sha256:[0-9a-f]{64}$ ]] || echo "images[0].digest must be sha256:<64 hex>"
+  [[ -z $image_extra ]] || echo "images[0] may hold only name and digest, found: $image_extra"
+  [[ $source_keys == 2 ]] || echo "commonAnnotations need <domain>/source-sha and <domain>/source-repo"
+
+  crons="" servers=""
+  while IFS='=' read -r key value; do
+    case $key in
+      cron) crons+=${crons:+,}$value ;;
+      server) servers+=${servers:+,}$value ;;
+      image) image=$value ;;
+      time_zone) time_zone=$value ;;
+      concurrency) concurrency=$value ;;
+      non_root) non_root=$value ;;
+      read_only) read_only=$value ;;
+      memory) memory=$value ;;
+    esac
+  # In yq "," binds looser than "|": every list after a pipe is in parentheses.
+  done < <(yq -N -r '
+    (select(.kind == "Deployment" or .kind == "Service" or .kind == "IngressRoute") | "server=" + .kind + "/" + .metadata.name),
+    (select(.kind == "CronJob") | (
+      ("cron=" + .metadata.name),
+      ("time_zone=" + (.spec.timeZone // "")),
+      ("concurrency=" + (.spec.concurrencyPolicy // "")),
+      ("non_root=" + (.spec.jobTemplate.spec.template.spec.securityContext.runAsNonRoot // false | tostring)),
+      (.spec.jobTemplate.spec.template.spec.containers[0] | (
+        ("image=" + .image),
+        ("read_only=" + (.securityContext.readOnlyRootFilesystem // false | tostring)),
+        ("memory=" + (.resources.limits.memory // ""))
+      ))
+    ))
+  ' "$(rel "$rendered")")
+  [[ $crons == "$app" ]] || echo "build: expected one CronJob $app, got '$crons'"
+  [[ -z $servers ]] || echo "build: a job has no Deployment, Service or route, got $servers"
+  [[ $image =~ ^${REGISTRY//./\\.}/${app}@sha256:[0-9a-f]{64}$ ]] || echo "build: image must be $REGISTRY/$app@sha256:<digest>, got '$image'"
+  [[ -n $time_zone ]] || echo "build: spec.timeZone is required"
+  [[ $concurrency == Forbid ]] || echo "build: concurrencyPolicy must be Forbid"
+  [[ $non_root == true ]] || echo "build: must run as non-root"
+  [[ $read_only == true ]] || echo "build: needs a read-only root filesystem"
+  [[ -n $memory ]] || echo "build: needs a memory limit"
+}
+
 status=0
 for file in apps/*/prod/kustomization.yaml; do
   app=${file#apps/}
@@ -47,6 +117,17 @@ for file in apps/*/prod/kustomization.yaml; do
   name=${app#_}
   rendered=$OUT/kustomize/apps_${app}_prod.yaml
   [[ -f $rendered ]] || fail "no $rendered; run make render first"
+
+  if [[ $JOBS == *" $app "* ]]; then
+    problems=$(job_errors "$app" "$file" "$rendered")
+    if [[ -n $problems ]]; then
+      while IFS= read -r line; do echo "FAIL: apps/$app/prod: $line" >&2; done <<<"$problems"
+      status=1
+    else
+      echo "ok   apps/$app/prod: job $name"
+    fi
+    continue
+  fi
 
   errors=()
 

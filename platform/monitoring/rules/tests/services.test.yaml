@@ -496,3 +496,22 @@ tests:
               summary: "prod/pay-api keeps answering 503 to payment webhooks"
               description: "For 30 minutes a webhook has reported a success without the money, and the provider's record does not show it or cannot be read."
               runbook_url: "https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#paymentwebhooksdeferred"
+  - interval: 1m
+    input_series:
+      - series: 'kube_cronjob_status_last_successful_time{namespace="prod",cronjob="digests"}'
+        values: '0x1700'
+    alert_rule_test:
+      - eval_time: 1500m
+        alertname: CronJobOverdue
+        exp_alerts: []
+      - eval_time: 1600m
+        alertname: CronJobOverdue
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              namespace: prod
+              cronjob: digests
+            exp_annotations:
+              summary: "prod/digests has not succeeded for over 26 hours"
+              description: "A job that runs every day has not finished successfully since yesterday; its digest did not arrive."
+              runbook_url: "https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#cronjoboverdue"

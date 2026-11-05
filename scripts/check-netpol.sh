@@ -82,8 +82,8 @@ for rendered in "$OUT"/kustomize/apps_*_prod.yaml; do
     ($np | map(select((.spec.podSelector.matchLabels // {}) | to_entries | all_c(. as $e | ($server | .[$e.key]) == $e.value)))) as $snp |
     ($snp | map(.spec.egress // []) | flatten) as $srules |
     [
-      ($all | map(select(.kind == "Deployment" or .kind == "StatefulSet" or .kind == "DaemonSet" or .kind == "Job")) | .[] |
-        .spec.template.metadata.labels as $l |
+      ($all | map(select(.kind == "Deployment" or .kind == "StatefulSet" or .kind == "DaemonSet" or .kind == "Job" or .kind == "CronJob")) | .[] |
+        (.spec.jobTemplate.spec.template // .spec.template).metadata.labels as $l |
         "workload=" + .kind + "/" + .metadata.name + ":" +
         ($np | map(select((.spec.podSelector.matchLabels // {}) | to_entries | all_c(. as $e | ($l | .[$e.key]) == $e.value))) | length | tostring)),
       "open_rules=" + ($np | map(.spec.egress // []) | flatten | map(select((.to // []) | length == 0)) | length | tostring),

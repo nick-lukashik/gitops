@@ -1,0 +1,64 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: digests
+  labels:
+    app.kubernetes.io/name: digests
+    app.kubernetes.io/component: job
+    app.kubernetes.io/part-of: nick-lukashik
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  schedule: "0 12 * * *"
+  timeZone: Asia/Tbilisi
+  concurrencyPolicy: Forbid
+  # The node was down at 12:00: it still runs up to six hours later.
+  startingDeadlineSeconds: 21600
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      backoffLimit: 3
+      activeDeadlineSeconds: 900
+      # A failed Job keeps KubeJobFailed firing: a day to look at it, then it clears.
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: digests
+            app.kubernetes.io/component: job
+            app.kubernetes.io/part-of: nick-lukashik
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          enableServiceLinks: false
+          priorityClassName: service
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            fsGroup: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: app
+              image: ghcr.io/nick-lukashik/digests
+              envFrom:
+                - configMapRef:
+                    name: digests-config
+                - secretRef:
+                    name: digests-secrets
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+                capabilities:
+                  drop: ["ALL"]
+                seccompProfile:
+                  type: RuntimeDefault
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  memory: 192Mi

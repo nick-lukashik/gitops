@@ -286,3 +286,18 @@ Every lookup of provider sync has failed for 30 minutes (warning). Payments with
 ### PaymentWebhooksDeferred
 
 For 30 minutes pay-api has answered 503 to webhooks that report a success without the money, because the provider's record does not show it yet or cannot be read (warning). The provider retries, so nothing is lost while it does. If the retries run out first, provider sync still finds the payment. Read `kubectl -n prod logs deploy/pay-api --tail=200 | grep -iE 'lookup|without the money'`.
+
+### CronJobOverdue
+
+A daily CronJob has not finished successfully for over 26 hours (warning). For `digests`, the digest did not arrive in the Telegram topic Digests.
+
+```sh
+kubectl -n prod get cronjob,job,pod -l app.kubernetes.io/name=digests
+kubectl -n prod logs -l app.kubernetes.io/name=digests --tail=50
+```
+
+A Job that failed also fires `KubeJobFailed`. The usual causes are the Google key (`403` or `401` in the log: the service account lost access to the property, or the key was deleted), the bot token, or the image (`ImagePullBackOff`). After the fix, run it by hand, for a day that was missed too (`DIGEST_DATE`, in the repo's README):
+
+```sh
+kubectl -n prod create job --from=cronjob/digests digests-by-hand
+```
