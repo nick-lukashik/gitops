@@ -98,6 +98,24 @@ spec:
             summary: "{{ $labels.namespace }}/{{ $labels.service }} does not deliver sign-in codes"
             description: Users get no sign-in code (notifications-api unreachable or not sending), so they cannot sign in.
             runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#authcodedeliveryfailing
+        # LOGIN_CODES_PER_DAY of id-api is 70: half and 80% of it. Past it no one gets a code, so
+        # this has to be seen while there is time. A change of that number changes these two.
+        - alert: AuthCodeBudgetHalfUsed
+          expr: sum by (namespace, service) (increase(auth_code_deliveries_total[24h])) >= 35
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.namespace }}/{{ $labels.service }} has sent half of its daily budget of sign-in codes"
+            description: 35 of 70 sign-in codes went out in 24 hours, far more than usual.
+            runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#authcodebudgethalfused
+        - alert: AuthCodeBudgetNearlyUsed
+          expr: sum by (namespace, service) (increase(auth_code_deliveries_total[24h])) >= 56
+          labels:
+            severity: critical
+          annotations:
+            summary: "{{ $labels.namespace }}/{{ $labels.service }} has nearly used its daily budget of sign-in codes"
+            description: 56 of 70 sign-in codes went out in 24 hours. At 70 sign-in by code stops for everyone.
+            runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#authcodebudgetnearlyused
         # No `for`: a job is counted only after its last retry, so every one is an email lost.
         # A counter that is not pre-initialized appears with its first failure, already at 1,
         # which increase() cannot see, so a series new within the hour counts too; one

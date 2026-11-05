@@ -221,6 +221,16 @@ kubectl -n data exec pg-1 -c postgres -- psql -d notifications -c \
 
 `failed`: the provider refused the email, `last_error` says why. `skipped`, `expired before sending`: the code expired first; this case has no log line in either service.
 
+### AuthCodeBudgetHalfUsed
+
+id-api has sent 35 of its 70 sign-in codes in 24 hours (warning; `LOGIN_CODES_PER_DAY`). A person rarely needs more than one, so look at who asks: the requests to `/api/v1/login/email` in the log of id-api, and the addresses in Resend. An IP is held to 5 codes an hour and 15 a day, so many addresses at once mean a flood from several IPs: block them in Cloudflare. Real people mean the budget is too small: see [AuthCodeBudgetNearlyUsed](#authcodebudgetnearlyused).
+
+### AuthCodeBudgetNearlyUsed
+
+id-api has sent 56 of its 70 sign-in codes in 24 hours (critical). At 70 a code request answers 503 and the sign-in page says it is unavailable, for everyone, until 24 hours after the window opened (the Redis key `limit:codes-day`). Google, passkeys and open sessions keep working.
+
+The budget stays below the mail plan's daily limit, 100 emails on the free plan of Resend, and past that limit no email gets out, the codes included. To raise it, set `LOGIN_CODES_PER_DAY` in `apps/id-api/prod/kustomization.yaml` within the plan, and the two numbers of these alerts in `platform/monitoring/rules/services.yaml`.
+
 ### EmailJobsFailed
 
 notifications-api gave up on emails of a template (`welcome`, `receipt`) in the last hour (warning): the job failed every retry, so the user did not get the email. The reason of the last attempt is in the `deliveries` table:
