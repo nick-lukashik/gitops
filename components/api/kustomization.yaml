@@ -25,7 +25,7 @@ patches:
         template:
           metadata:
             labels:
-              # Destination of the api-clients egress policy (platform/policies/prod.yaml).
+              # Both ends of the api-clients egress policy (platform/policies/prod.yaml).
               nick-lukashik.com/kind: api
           spec:
             containers:
@@ -68,17 +68,6 @@ patches:
       kind: NetworkPolicy
       labelSelector: app.kubernetes.io/component=server
     patch: |-
-      # Server-side callers: pods with the api-client label (components/web)
-      # in the same namespace, on the http port.
-      - op: add
-        path: /spec/ingress/-
-        value:
-          from:
-            - podSelector:
-                matchLabels:
-                  nick-lukashik.com/api-client: "true"
-          ports:
-            - port: http
       # Prometheus, on the metrics port only.
       - op: add
         path: /spec/ingress/-

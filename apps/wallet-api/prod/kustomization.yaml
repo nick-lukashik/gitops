@@ -27,6 +27,21 @@ commonAnnotations:
   nick-lukashik.com/source-sha: "8f98d8ea136353ad3947f8fb12996037d468afa7"
   nick-lukashik.com/source-repo: nick-lukashik/wallet-api
 patches:
+  # Who may call this api, one entry per caller. A caller missing here gets a timeout, and
+  # only in prod: e2e runs without network policies.
+  - target:
+      kind: NetworkPolicy
+      labelSelector: app.kubernetes.io/component=server
+    patch: |-
+      - op: add
+        path: /spec/ingress/-
+        value:
+          from:
+            - podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: id-web
+          ports:
+            - port: http
   # It calls other apis (JWKS of id-api at least): the one label for both
   # directions of api calls (platform/policies/prod.yaml, components/api).
   - target:

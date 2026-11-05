@@ -26,11 +26,11 @@ spec:
 # Default deny, both ways: a pod of prod gets only what a NetworkPolicy allows.
 # The allows (K3s network policy controller, kube-router):
 # - components/service: ingress from Traefik on http; egress to CoreDNS only;
-# - components/api: ingress from api clients on http and Prometheus on metrics;
+# - components/api: ingress from Prometheus on metrics;
 #   egress to data namespaces and to public addresses on 443; the migrate Job:
 #   egress to CoreDNS and data namespaces;
-# - api-clients below: egress of web pods (and of an api that calls another
-#   api) to api pods.
+# - api-clients below: egress of web and api pods to api pods; the ingress of
+#   each api lists its callers in apps/<name>/prod.
 # Kubelet probes come from the node and are always allowed by kube-router.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -43,10 +43,9 @@ spec:
     - Ingress
     - Egress
 ---
-# Server-side calls to the api services: every pod labelled api-client (the
-# web kind sets it in components/web; an api that calls another api adds it in
-# its own folder) may reach api pods on http. The api side accepts the same
-# label (components/api), so the label is the one switch for both directions.
+# Server-side calls to the api services: every web and api pod may try to reach
+# api pods on http. Which calls get through is up to the called api: it lists
+# its callers in apps/<name>/prod, and every other pod is refused at its door.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -54,8 +53,9 @@ metadata:
   namespace: prod
 spec:
   podSelector:
-    matchLabels:
-      nick-lukashik.com/api-client: "true"
+    matchExpressions:
+      - key: nick-lukashik.com/kind
+        operator: Exists
   policyTypes:
     - Egress
   egress:

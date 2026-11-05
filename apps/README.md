@@ -53,7 +53,7 @@ Then:
 1. `service.yaml`: the subdomain in ConfigMap `route`, or delete it and `components/subdomain` for the root domain.
 2. `kustomization.yaml`: the env of the service in `configMapGenerator`; `digest` and `source-sha` of the first image (summary of job `image` in the service repo). A zero digest would deploy an image that does not exist. From then on the deploy PRs keep both current.
 3. Secrets: seal `<service>-secrets` ([SECRETS.md](../SECRETS.md)), or drop the file and its `resources` line.
-4. Callers of an api: a web has the `api-client` label already. Another api that calls it adds the label to its own pod template in `patches`; that one label gives both the ingress on the called api and the egress to it (NetworkPolicy `api-clients`). Any other destination of a service (a new data store, an external API not on 443) is a NetworkPolicy change in `components/` or `platform/policies/`, reviewed like any other.
+4. Callers of an api: the called api lists them by name in `patches` of its own `kustomization.yaml` (see `apps/wallet-api/prod`). A web or api pod may try to reach any api (NetworkPolicy `api-clients`), and only a listed caller gets through. A new call between services needs its line, and a missing one shows up only in prod, as a timeout: e2e runs without network policies. Any other destination of a service (a new data store, an external API not on 443) is a NetworkPolicy change in `components/` or `platform/policies/`, reviewed like any other.
 5. `make verify`.
 
 ### Per-service smoke paths

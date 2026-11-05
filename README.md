@@ -73,7 +73,7 @@ K3s enforces NetworkPolicies with its embedded kube-router. The rules, in `platf
 
 | Namespace | Default | Allowed |
 |---|---|---|
-| `prod` | deny ingress and egress | ingress: Traefik on `http` (not an `internal` api); api: pods labelled `api-client` on `http`, Prometheus on `metrics`. Egress: CoreDNS (53 UDP/TCP) for every service; web and other `api-client` pods: api pods on `http`; api: namespaces labelled `data=true` (stage 3) and public addresses on 443 (private, CGNAT, link-local, loopback excluded); the api migrate Job: CoreDNS and data namespaces |
+| `prod` | deny ingress and egress | ingress: Traefik on `http` (not an `internal` api); api: the callers it lists in `apps/<name>/prod` on `http`, Prometheus on `metrics`. Egress: CoreDNS (53 UDP/TCP) for every service; web and api pods: api pods on `http`; api: namespaces labelled `data=true` (stage 3) and public addresses on 443 (private, CGNAT, link-local, loopback excluded); the api migrate Job: CoreDNS and data namespaces |
 | `monitoring` | deny ingress | Prometheus to every pod (scrapes, alerts to Alertmanager); Grafana to Prometheus (9090), Alertmanager (9093) and Loki (3100); Alloy to Loki (3100); Traefik to Grafana (3000) |
 | `monitoring-node` | deny ingress | Prometheus to Alloy (12345). node-exporter runs with `hostNetwork`: no NetworkPolicy applies to it; `prod` pods cannot reach node ports because their egress is denied |
 | `data` | deny ingress | `prod` pods on 5432 (Postgres), 6379 (Redis), 5672 (RabbitMQ); the CNPG operator to the Postgres pods on 8000 and 5432; Prometheus on 9187 and 15692. Egress stays open: the Postgres pods talk to the Kubernetes API and to R2 |
