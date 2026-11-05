@@ -32,6 +32,8 @@ jobs:
       - id: list
         env:
           BEFORE: ${{ github.event.before }}
+        # With pipefail: an exit inside the loop below fails the step.
+        shell: bash
         run: |
           # The pushed range: one squash commit normally, more after an owner
           # push that bypasses the ruleset.
@@ -54,13 +56,14 @@ jobs:
               host=$(kustomize build "$dir" |
                 yq -N 'select(.kind == "IngressRoute") | .metadata.annotations["nl-gitops/host"] // ""')
               if [[ ! $host =~ ^[a-z0-9.-]+$ ]]; then
-                echo "::warning::$dir: no single IngressRoute with nl-gitops/host, skipped"
+                # To stderr: stdout of this loop is the JSON that jq reads.
+                echo "::warning::$dir: no route, no smoke check" >&2
                 continue
               fi
               paths=$(kustomize build "$dir" |
                 yq -N 'select(.kind == "IngressRoute") | .metadata.annotations["nl-gitops/smoke-paths"] // ""')
               if [ -z "$paths" ]; then
-                echo "::error::$dir: nl-gitops/smoke-paths is required"
+                echo "::error::$dir: nl-gitops/smoke-paths is required" >&2
                 exit 1
               fi
               SERVICE=$service URL="https://$host" CHECK_PATHS="$paths" yq -o=json -I=0 '{
