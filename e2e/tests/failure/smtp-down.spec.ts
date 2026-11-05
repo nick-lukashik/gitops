@@ -1,4 +1,4 @@
-import { ui } from '../copy'
+import { subjects, ui } from '../copy'
 import { signInCode, subjectsTo } from '../mailpit'
 import { alert, emailField, expect, expectNoCrash, requestCode, start, stop, submitCode, test } from './harness'
 
@@ -33,7 +33,9 @@ test.describe('SMTP down @failure', () => {
         })
         await submitCode(page, await signInCode(request, email))
         await expect(page).toHaveURL(/\/account$/)
-        expect(await subjectsTo(request, email), 'one email: the attempt that failed is not sent later').toHaveLength(1)
+        // A new person also gets the welcome email, whenever its job runs: only codes count.
+        const codes = (await subjectsTo(request, email)).filter(subject => subjects.signInCode.test(subject))
+        expect(codes, 'one code: the attempt that failed is not sent later').toHaveLength(1)
     })
 
     test('a new code that cannot be sent: the code step says so, and the last code still works', async ({
