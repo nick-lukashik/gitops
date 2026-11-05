@@ -6,10 +6,10 @@ Everything that runs in the nick-lukashik cluster: single-node K3s, Argo CD 3.x 
 
 | Folder | What |
 |---|---|
-| [`bootstrap/`](bootstrap/) | installed once: Sealed Secrets key and controller, Argo CD, repo access, `root` |
+| [`bootstrap/`](bootstrap/) | installed once: PriorityClasses, Sealed Secrets key and controller, Argo CD, AppProjects, `root` |
 | [`platform/`](platform/) | app-of-apps: Argo CD, Sealed Secrets, cert-manager, Traefik, policies, monitoring |
 | [`apps/<service>/prod/`](apps/) | one folder per service; each becomes Application `<service>-prod` (ApplicationSet `apps-prod`). Templates: `apps/_example-web`, `apps/_example-api` |
-| [`components/`](components/) | kustomize components: `service` + `api` or `web` (the service runtime contract), settings, host |
+| [`components/`](components/) | kustomize components: `service` + `api` or `web` (the service runtime contract), `internal` for an api without a route, settings, host, subdomain |
 | [`projects/`](projects/) | AppProjects `platform` and `prod` |
 | [`docs/`](docs/) | resource budget, runbooks |
 | [`e2e/`](e2e/) | the deployed set end to end on one machine, with real data stores and a browser ([e2e/README.md](e2e/README.md)); check `e2e` on deploy PRs |
@@ -21,7 +21,7 @@ Services follow the [service runtime contract](https://github.com/nick-lukashik/
 
 | What | Where |
 |---|---|
-| Domain, Telegram group and topic ids | `components/settings/settings.yaml` |
+| Domain, Telegram group and topic ids | `components/settings/settings.yaml`. The digest takes its chat and topic from sealed `digests-secrets` instead ([SECRETS.md](SECRETS.md)) |
 | Helm chart versions | `targetRevision` in `platform/**/application.yaml`; `bootstrap/install.sh` reads them from there |
 | Service images | `images` entry with a digest in `apps/<service>/prod/kustomization.yaml` |
 | Service host | ConfigMap `route` (subdomain) in `apps/<service>/prod/service.yaml`; the root domain without it |
@@ -31,7 +31,7 @@ Services follow the [service runtime contract](https://github.com/nick-lukashik/
 
 ## Public repository
 
-`gitops` is public: on GitHub Free only public repos get the `master` ruleset, and a merge to `master` here is a deploy. The ruleset (`infra` `docs/github.md`) requires a PR with one approval and the check `ci / verify`, and no bot or GitHub App may bypass it. The deployer App can open deploy PRs but cannot change `master`.
+`gitops` is public: on GitHub Free only public repos get the `master` ruleset, and a merge to `master` here is a deploy. The ruleset (`infra` `docs/github.md`) requires a PR with one approval and the checks `ci / verify` and `e2e`, and no bot or GitHub App may bypass it. The deployer App can open deploy PRs but cannot change `master`.
 
 Everything here is readable by anyone. What may be in the repo:
 
@@ -57,14 +57,15 @@ Only Docker is needed: the tools run in containers pinned by digest. CI runs on 
 - `kustomize build` of every folder with a `kustomization.yaml`, the service templates `apps/_example-web` and `apps/_example-api` included;
 - `helm template` of every Helm application with its values, and of the Traefik bundled with K3s with the `HelmChartConfig`;
 - images in `apps/*/prod` only by digest;
-- every `apps/*/prod` follows the service contract (`scripts/check-apps.sh`; a scheduled job in its `JOBS` has its own CronJob and NetworkPolicy instead of the components): `components/service` first, then exactly one of `api` or `web`, optionally `subdomain`; one `images` entry `ghcr.io/nick-lukashik/<service>` with a digest and no `newName`; the build has the Deployment, its ConfigMap `<service>-config`, a route with a host and the middleware `real-ip@file` (an api also `body-limit@file`, 1 MiB; a web limits bodies in the app), and the parts of its kind. Third-party apps (none today) are listed in the script and skipped;
+- every `apps/*/prod` follows the service contract (`scripts/check-apps.sh`; a scheduled job in its `JOBS` has its own CronJob and NetworkPolicy instead of the components): `components/service` first, then exactly one of `api` or `web`, optionally `subdomain`, or `internal` for an api without a route; one `images` entry `ghcr.io/nick-lukashik/<service>` with a digest and no `newName`; the build has the Deployment, its ConfigMap `<service>-config`, a route with a host and the middleware `real-ip@file` (an api also `body-limit@file`, 1 MiB; a web limits bodies in the app; an `internal` api has no route), and the parts of its kind. Third-party apps (none today) are listed in the script and skipped;
 - network isolation (`scripts/check-netpol.sh`): `prod` denies ingress and egress by default; every workload of every `apps/*/prod` is selected by a policy with egress rules, and no rule allows any destination; services have DNS egress, an api has public 443 without private ranges, a web has the `api-client` label; `monitoring` and `monitoring-node` deny ingress by default; Loki has a policy whose only peers are Alloy, Grafana and Loki;
 - `kubeconform -strict` against the Kubernetes 1.36 schemas (native `preStop` `sleep` included) and the CRD schemas (Argo CD, Traefik, cert-manager, Sealed Secrets, Prometheus Operator, K3s);
 - `promtool check rules` and unit tests of every alert;
 - `amtool check-config` of the Alertmanager config;
-- Alloy syntax and the secret-masking test on sample logs.
+- Alloy syntax and the secret-masking test on sample logs;
+- the rendered RabbitMQ definitions on a real broker: it boots, keeps an event published before any consumer started, and accepts what the services declare (`scripts/check-rabbitmq.sh`).
 
-Single checks: `make render`, `make apps`, `make netpol`, `make rules`, `make alloy` and the other targets of the `Makefile`.
+Single checks: `make render`, `make apps`, `make netpol`, `make rules`, `make alloy`, `make rabbitmq` and the other targets of the `Makefile`.
 
 ## Network
 
@@ -72,15 +73,17 @@ K3s enforces NetworkPolicies with its embedded kube-router. The rules, in `platf
 
 | Namespace | Default | Allowed |
 |---|---|---|
-| `prod` | deny ingress and egress | ingress: Traefik on `http`; api: pods labelled `api-client` on `http`, Prometheus on `metrics`. Egress: CoreDNS (53 UDP/TCP) for every service; web and other `api-client` pods: api pods on `http`; api: namespaces labelled `data=true` (stage 3) and public addresses on 443 (private, CGNAT, link-local, loopback excluded); the api migrate Job: CoreDNS and data namespaces |
+| `prod` | deny ingress and egress | ingress: Traefik on `http` (not an `internal` api); api: pods labelled `api-client` on `http`, Prometheus on `metrics`. Egress: CoreDNS (53 UDP/TCP) for every service; web and other `api-client` pods: api pods on `http`; api: namespaces labelled `data=true` (stage 3) and public addresses on 443 (private, CGNAT, link-local, loopback excluded); the api migrate Job: CoreDNS and data namespaces |
 | `monitoring` | deny ingress | Prometheus to every pod (scrapes, alerts to Alertmanager); Grafana to Prometheus (9090), Alertmanager (9093) and Loki (3100); Alloy to Loki (3100); Traefik to Grafana (3000) |
 | `monitoring-node` | deny ingress | Prometheus to Alloy (12345). node-exporter runs with `hostNetwork`: no NetworkPolicy applies to it; `prod` pods cannot reach node ports because their egress is denied |
+| `data` | deny ingress | `prod` pods on 5432 (Postgres), 6379 (Redis), 5672 (RabbitMQ); the CNPG operator to the Postgres pods on 8000 and 5432; Prometheus on 9187 and 15692. Egress stays open: the Postgres pods talk to the Kubernetes API and to R2 |
+| `cnpg-system` | no policy | the CloudNativePG operator and its Barman Cloud plugin |
 
 kube-router always allows traffic from the node itself (kubelet probes) and does not apply policies to `hostNetwork` pods. `kubectl port-forward` is not subject to policies.
 
 ## Recovery
 
-RPO and RTO targets, what is lost on a rebuild and the restore of the whole cluster on a clean server: [`docs/recovery.md` of `infra`](https://github.com/nick-lukashik/infra/blob/master/docs/recovery.md) (private repo). In short: the cluster is rebuilt from this repo, the Sealed Secrets key in Bitwarden and, optionally, an etcd snapshot in R2; logs are in R2; the volumes of stage 1–2 hold only data that is rebuilt (metrics, Grafana DB, Alertmanager state).
+RPO and RTO targets, what is lost on a rebuild and the restore of the whole cluster on a clean server: [`docs/recovery.md` of `infra`](https://github.com/nick-lukashik/infra/blob/master/docs/recovery.md) (private repo). In short: the cluster is rebuilt from this repo, the Sealed Secrets key in Bitwarden and, optionally, an etcd snapshot in R2; logs are in R2; the service data comes back from a point-in-time restore of Postgres, also from R2; the other volumes hold only data that is rebuilt or may be lost (metrics, Grafana DB, Alertmanager state, RabbitMQ, Redis).
 
 ## Step 4. Bootstrap of the cluster
 
@@ -211,7 +214,7 @@ kubectl -n prod run np-test --image=busybox:1.37 --restart=Never --rm -i --overr
 
 ## Deploy and smoke
 
-A merge of a deploy PR (or a rollback PR) changes `apps/<service>/prod/kustomization.yaml`. Workflow `.github/workflows/smoke.yml` then runs `smoke.yml@v1` of `nick-lukashik/.github` for each changed service: it waits until `https://<host>/health/ready` answers with header `x-app-version` equal to the deployed SHA (Argo CD polls git every 3 minutes), checks `/`, and posts the result to the Telegram topic "Deploys". It needs the org secret `OPS_TELEGRAM_TOKEN` and the variables `OPS_TELEGRAM_CHAT_ID`, `OPS_TELEGRAM_TOPIC_DEPLOYS` shared with `gitops`. Removed once Argo CD reports GitHub deployments.
+A merge of a deploy PR (or a rollback PR) changes `apps/<service>/prod/kustomization.yaml`. Workflow `.github/workflows/smoke.yml` then runs `smoke.yml@v1` of `nick-lukashik/.github` for each changed service with a route (an internal api or a job has none and is skipped): it waits until `https://<host>/health/ready` answers with header `x-app-version` equal to the deployed SHA (Argo CD polls git every 3 minutes), checks the paths of the route annotation `nl-gitops/smoke-paths`, and posts the result to the Telegram topic "Deploys". It needs the org secret `OPS_TELEGRAM_TOKEN` and the variables `OPS_TELEGRAM_CHAT_ID`, `OPS_TELEGRAM_TOPIC_DEPLOYS` shared with `gitops`. Removed once Argo CD reports GitHub deployments.
 
 ## Updates
 
@@ -231,6 +234,9 @@ A merge of a deploy PR (or a rollback PR) changes `apps/<service>/prod/kustomiza
 ## Runbooks
 
 - [docs/runbook/deploy.md](docs/runbook/deploy.md): the e2e check and the diff before a merge, rollback, pausing auto-sync, a failed migration.
-- [docs/runbook/access.md](docs/runbook/access.md): Argo CD, Grafana, Alertmanager over port-forward; the admin password; repo access of a public `gitops`.
+- [docs/runbook/alerts.md](docs/runbook/alerts.md): what each alert means and what to check first.
+- [docs/runbook/access.md](docs/runbook/access.md): Argo CD, Grafana, Alertmanager over port-forward; the admin password; repo access of a public `gitops`; read-only access for an audit (`auditor`).
+- [docs/runbook/postgres.md](docs/runbook/postgres.md): the Postgres cluster, its backups to R2, a point-in-time restore.
+- [docs/runbook/accounts.md](docs/runbook/accounts.md): a person's data on request: a copy, deleting the account.
 - [docs/resources.md](docs/resources.md): memory and disk budget, priorities, Pod Security.
 - [Recovery](https://github.com/nick-lukashik/infra/blob/master/docs/recovery.md) (`infra`): RPO/RTO, restore on a clean server, the drill.
