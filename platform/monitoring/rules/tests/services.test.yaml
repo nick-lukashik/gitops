@@ -374,3 +374,125 @@ tests:
               summary: prod/pay-api could not apply payment webhooks (mismatch)
               description: A provider webhook matched no payment (unmatched) or not its amount or currency (mismatch); the money it reports is not credited yet.
               runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#paymentwebhooksunmatched
+  - interval: 1m
+    input_series:
+      - series: 'payments_unreconciled{namespace="prod",service="pay-api"}'
+        values: '0x10 2x60'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: PaymentsUnreconciled
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: PaymentsUnreconciled
+        exp_alerts: []
+      - eval_time: 45m
+        alertname: PaymentsUnreconciled
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              namespace: prod
+              service: pay-api
+            exp_annotations:
+              summary: "prod/pay-api has 2 paid payments not in the ledger"
+              description: "Reconciliation has been sending these events again for 30 minutes and wallet-api still has no pack for them; the buyers paid and have no coins."
+              runbook_url: "https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#paymentsunreconciled"
+  - interval: 1m
+    input_series:
+      - series: 'payment_reconciliation_total{namespace="prod",service="pay-api",result="republished"}'
+        values: '0x20 1x20'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: PaymentEventsRepublished
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: PaymentEventsRepublished
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              namespace: prod
+              service: pay-api
+            exp_annotations:
+              summary: "prod/pay-api sent payment events to the ledger again"
+              description: "A paid payment was not in the ledger past its grace period, so its event went out again. Coins were late; find out why the first event did not get there."
+              runbook_url: "https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#paymenteventsrepublished"
+  - interval: 1m
+    input_series:
+      - series: 'payment_provider_sync_total{namespace="prod",service="pay-api",result="mismatch"}'
+        values: '0x20 1x20'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: PaymentProviderMismatch
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: PaymentProviderMismatch
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              namespace: prod
+              service: pay-api
+            exp_annotations:
+              summary: "prod/pay-api found a payment whose provider record differs"
+              description: "The provider's own record of a pending payment shows another amount or currency. The payment stays pending and no coins are credited."
+              runbook_url: "https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#paymentprovidermismatch"
+  - interval: 1m
+    input_series:
+      - series: 'payment_provider_sync_total{namespace="prod",service="pay-api",result="applied"}'
+        values: '0x10 1x10 3x20'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: PaymentWebhooksLost
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: PaymentWebhooksLost
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              namespace: prod
+              service: pay-api
+            exp_annotations:
+              summary: "prod/pay-api paid several payments whose webhooks never came"
+              description: "Provider sync settled these payments, so the buyers got their coins, but late. The provider's webhooks are not reaching pay-api."
+              runbook_url: "https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#paymentwebhookslost"
+  - interval: 1m
+    input_series:
+      - series: 'payment_provider_sync_total{namespace="prod",service="pay-api",result="error"}'
+        values: '0+1x90'
+      - series: 'payment_provider_sync_total{namespace="prod",service="pay-api",result="open"}'
+        values: '0+1x10 10x80'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: PaymentProviderUnreachable
+        exp_alerts: []
+      - eval_time: 35m
+        alertname: PaymentProviderUnreachable
+        exp_alerts: []
+      - eval_time: 75m
+        alertname: PaymentProviderUnreachable
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              namespace: prod
+              service: pay-api
+            exp_annotations:
+              summary: "prod/pay-api cannot ask the payment provider"
+              description: "Every lookup of provider sync has failed for 30 minutes, so a payment whose webhook is lost stays pending until the provider answers again."
+              runbook_url: "https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#paymentproviderunreachable"
+  - interval: 1m
+    input_series:
+      - series: 'payment_webhooks_total{namespace="prod",service="pay-api",result="deferred"}'
+        values: '0+1x60'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: PaymentWebhooksDeferred
+        exp_alerts: []
+      - eval_time: 45m
+        alertname: PaymentWebhooksDeferred
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              namespace: prod
+              service: pay-api
+            exp_annotations:
+              summary: "prod/pay-api keeps answering 503 to payment webhooks"
+              description: "For 30 minutes a webhook has reported a success without the money, and the provider's record does not show it or cannot be read."
+              runbook_url: "https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#paymentwebhooksdeferred"

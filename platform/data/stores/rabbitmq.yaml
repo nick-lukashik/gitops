@@ -17,7 +17,8 @@ data:
     log.console = true
     log.console.level = info
     log.file = false
-    # Quorum queues need three nodes to be useful; classic queues are durable here.
+    # For a queue declared without a type. The services' queues name theirs (quorum)
+    # in rabbitmq-topology.json and when they declare them, so this does not reach them.
     default_queue_type = classic
     vm_memory_high_watermark.relative = 0.6
     disk_free_limit.absolute = 1GB

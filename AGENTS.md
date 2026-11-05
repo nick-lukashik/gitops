@@ -26,5 +26,6 @@ A green `make verify` before every PR (needs Docker). CI runs the same set, job 
 - What a service gets from the platform is the [service runtime contract](https://github.com/nick-lukashik/.github/blob/master/docs/service-contract.md), implemented by `components/service` + `components/api` or `components/web`. A change there is a change of the contract: update the contract and the starters with it.
 - A third-party image (not built from a starter) gets its own manifests and an entry in `THIRD_PARTY` of `scripts/check-apps.sh` (none today).
 - A platform component: an Application in `platform/<component>/application.yaml`, a line in `platform/kustomization.yaml`, a sync-wave in dependency order.
+- A new queue or binding in a service: also in `platform/data/stores/rabbitmq-topology.json` and in `CONSUMERS` of `scripts/check-rabbitmq-topology.mjs`, and the copy in that service's `test/fixtures/` (its test compares the two). The broker loads the file at boot, so an event finds its queue before the consumer ever started; a queue left out only exists once the consumer has run.
 - A new alert: a rule in `platform/monitoring/rules/` with `severity` and `runbook_url`, a unit test in `tests/` (without it CI fails), and its section in `docs/runbook/alerts.md`, which `runbook_url` points to.
 - Comments and documents: English only; YAML comments short.

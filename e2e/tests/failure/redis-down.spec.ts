@@ -16,6 +16,7 @@ import {
     sessionCookie,
     signIn,
     signOut,
+    signOutRefused,
     start,
     stop,
     submitCode,
@@ -87,10 +88,8 @@ test.describe('Redis stops @failure', () => {
         await signIn(newcomer, request)
     })
 
-    // Defect, id-api: POST /sessions/refresh answers 500 with Redis offline; RefreshStore says
-    // 503, as the limiter gives. id-web treats both alike, but each one is logged as an
-    // internal error with its stack and counts as a server error.
-    test.fixme('a refresh during the outage is a 503, the answer for a dependency that is down', async ({
+    // Not a 500: a store that is down is no internal error, and is not logged as one.
+    test('a refresh during the outage is a 503, the answer for a dependency that is down', async ({
         newPerson,
         request,
     }) => {
@@ -117,16 +116,30 @@ test.describe('Redis stops @failure', () => {
         ])
     })
 
-    // Defect, id-web and id-api: sign-out during an outage (private backlog).
-    test.fixme('sign-out during the outage ends the session once Redis is back', async ({ newPerson, request }) => {
+    test('sign-out during the outage says so, keeps the session, and works once Redis is back', async ({
+        newPerson,
+        request,
+    }) => {
         const person = await newPerson()
-        await signIn(person, request)
-        const cookie = await sessionCookie(person)
+        // After a scenario that stopped Redis: id-api's client reconnects a moment after it is healthy.
+        await expect(() => signIn(person, request)).toPass({
+            timeout: 60_000,
+        })
+        const { page, email } = person
 
         await stop('redis')
-        await signOut(person.page)
+        await signOutRefused(person)
         await start('redis')
 
+        // Until id-api's client has reconnected, a sign-out is refused the same way.
+        const cookie = await sessionCookie(person)
+        await expect(async () => {
+            await page.goto('/account')
+            await expectAccount(page, email)
+            await signOut(page)
+        }).toPass({
+            timeout: 60_000,
+        })
         await expectSessionOver(person, cookie)
     })
 })

@@ -123,3 +123,63 @@ spec:
             summary: "{{ $labels.namespace }}/{{ $labels.service }} could not apply payment webhooks ({{ $labels.result }})"
             description: A provider webhook matched no payment (unmatched) or not its amount or currency (mismatch); the money it reports is not credited yet.
             runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#paymentwebhooksunmatched
+        # A paid payment missing from the ledger after its grace period: paid without coins.
+        - alert: PaymentsUnreconciled
+          expr: max by (namespace, service) (payments_unreconciled) > 0
+          for: 30m
+          labels:
+            severity: critical
+          annotations:
+            summary: "{{ $labels.namespace }}/{{ $labels.service }} has {{ $value }} paid payments not in the ledger"
+            description: Reconciliation has been sending these events again for 30 minutes and wallet-api still has no pack for them; the buyers paid and have no coins.
+            runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#paymentsunreconciled
+        # No `for`: the ledger was behind and reconciliation fixed it, once, and that should not happen.
+        - alert: PaymentEventsRepublished
+          expr: sum by (namespace, service) (increase(payment_reconciliation_total{result="republished"}[1h])) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.namespace }}/{{ $labels.service }} sent payment events to the ledger again"
+            description: A paid payment was not in the ledger past its grace period, so its event went out again. Coins were late; find out why the first event did not get there.
+            runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#paymenteventsrepublished
+        # No `for`: each one is a payment someone has to look at. It stays pending, so it keeps firing until they do.
+        - alert: PaymentProviderMismatch
+          expr: sum by (namespace, service) (increase(payment_provider_sync_total{result="mismatch"}[1h])) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.namespace }}/{{ $labels.service }} found a payment whose provider record differs"
+            description: The provider's own record of a pending payment shows another amount or currency. The payment stays pending and no coins are credited.
+            runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#paymentprovidermismatch
+        # A payment the provider paid and whose webhook never came. One can get lost; more mean the webhook is broken.
+        - alert: PaymentWebhooksLost
+          expr: sum by (namespace, service) (increase(payment_provider_sync_total{result="applied"}[6h])) > 1
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.namespace }}/{{ $labels.service }} paid several payments whose webhooks never came"
+            description: Provider sync settled these payments, so the buyers got their coins, but late. The provider's webhooks are not reaching pay-api.
+            runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#paymentwebhookslost
+        # Over 30 minutes: a provider's short outage heals by itself.
+        - alert: PaymentProviderUnreachable
+          expr: |
+            sum by (namespace, service) (increase(payment_provider_sync_total{result="error"}[30m])) > 0
+            unless
+            sum by (namespace, service) (increase(payment_provider_sync_total{result=~"applied|open|missing|mismatch"}[30m])) > 0
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.namespace }}/{{ $labels.service }} cannot ask the payment provider"
+            description: Every lookup of provider sync has failed for 30 minutes, so a payment whose webhook is lost stays pending until the provider answers again.
+            runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#paymentproviderunreachable
+        # Webhooks of a success the provider's record does not confirm: its retries go on until it does.
+        - alert: PaymentWebhooksDeferred
+          expr: sum by (namespace, service) (increase(payment_webhooks_total{result="deferred"}[30m])) > 0
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.namespace }}/{{ $labels.service }} keeps answering 503 to payment webhooks"
+            description: For 30 minutes a webhook has reported a success without the money, and the provider's record does not show it or cannot be read.
+            runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#paymentwebhooksdeferred

@@ -3,12 +3,13 @@
 # pin in pay-api.env; they and the secrets of the run come from .env, which
 # tests/stack.ts writes before every run. Data stores as in platform/data/stores,
 # Mailpit for email. Ports on 127.0.0.1 only: id-web 3900, Mailpit 3901 unless
-# .env says otherwise. COMPOSE_PROJECT_NAME in .env wins over this name.
+# .env says otherwise, id-web behind TLS. COMPOSE_PROJECT_NAME in .env wins over
+# this name.
 name: nl-e2e
 
 # id-web's public origin: the issuer of access tokens, links in emails, the
 # fake checkout. Keep it equal to WEB_URL in tests/stack.ts.
-x-origin: &origin http://localhost:${E2E_WEB_PORT:-3900}
+x-origin: &origin https://localhost:${E2E_WEB_PORT:-3900}
 
 # The pod contract (components/service): the image's non-root user, read-only
 # root filesystem with /tmp writable, no capabilities. The service images are
@@ -210,6 +211,8 @@ services:
       TOKEN_ISSUER: *origin
       ID_API_URL: http://id-api:3000
       ID_INTERNAL_TOKEN: ${ID_INTERNAL_TOKEN:?}
+      WALLET_API_URL: http://wallet-api:3000
+      WALLET_INTERNAL_TOKEN: ${WALLET_INTERNAL_TOKEN:?}
       ID_WEB_URL: *origin
       # The test provider: no money moves; NODE_ENV=production needs the opt-in.
       PAY_PROVIDER: fake
@@ -228,7 +231,7 @@ services:
       - /tmp
       - /app/.next/cache
     environment:
-      # http: the cookies fall back to the bare names (no __Host- prefix).
+      # https, behind id-web-tls: the cookies have prod's names (__Host-) and Secure.
       SITE_URL: *origin
       ID_API_URL: http://id-api:3000
       WALLET_API_URL: http://wallet-api:3000
@@ -237,8 +240,6 @@ services:
       SESSION_SECRET: ${ID_WEB_SESSION_SECRET:?}
       # Off in prod until pay-api runs there; the payment scenario needs the pages.
       PAYMENTS_ENABLED: "true"
-    ports:
-      - 127.0.0.1:${E2E_WEB_PORT:-3900}:3000
     depends_on:
       id-api:
         condition: service_healthy
@@ -248,3 +249,42 @@ services:
         condition: service_healthy
       pay-api:
         condition: service_healthy
+
+  # TLS in front of id-web, as Traefik in prod, so that a browser treats the
+  # cookies as it does in prod. The certificate is from Caddy's own CA; Playwright
+  # accepts it (tests/playwright.config.ts).
+  id-web-tls:
+    image: docker.io/library/caddy:2.10-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
+    configs:
+      - source: web-tls
+        target: /etc/caddy/Caddyfile
+    environment:
+      SITE_PORT: ${E2E_WEB_PORT:-3900}
+      UPSTREAM: id-web:3000
+    ports:
+      - 127.0.0.1:${E2E_WEB_PORT:-3900}:${E2E_WEB_PORT:-3900}
+    healthcheck:
+      test: [CMD-SHELL, 'wget --no-check-certificate -q -O /dev/null "https://localhost:$$SITE_PORT/health/ready"']
+      interval: 1s
+      timeout: 5s
+      retries: 60
+    depends_on:
+      id-web:
+        condition: service_healthy
+
+configs:
+  web-tls:
+    content: |
+      {
+        admin off
+        skip_install_trust
+        # A container that starts changes the host's network, and Chromium then
+        # fails what it has in flight on an HTTP/2 connection (ERR_NETWORK_CHANGED).
+        servers {
+          protocols h1
+        }
+      }
+      https://localhost:{$$SITE_PORT} {
+        tls internal
+        reverse_proxy {$$UPSTREAM}
+      }

@@ -38,6 +38,8 @@ export default defineConfig({
           ],
     use: {
         baseURL: WEB_URL,
+        // The certificate of id-web-tls, from a CA of its own.
+        ignoreHTTPSErrors: true,
         locale: 'en-US',
         trace: 'retain-on-failure',
         screenshot: 'only-on-failure',

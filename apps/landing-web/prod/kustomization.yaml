@@ -4,6 +4,7 @@ kind: Kustomization
 namespace: prod
 resources:
   - service.yaml
+  - landing-web-secrets.sealedsecret.yaml
 components:
   # Root domain: service (with the host) and the kind, no subdomain.
   - ../../../components/service
@@ -15,8 +16,13 @@ configMapGenerator:
     literals:
       - LOG_LEVEL=info
       - ROBOTS=index
+      # Public on every page. Consent starts denied (README of the service).
+      - GTM_ID=GTM-MTGKCHJ6
       # Filled from the route below: the domain lives only in components/settings.
       - SITE_URL=https://HOST
+      # Accounts on (README of landing-web): the account site, and id-api in the cluster.
+      - ID_URL=https://id.HOST
+      - ID_API_URL=http://id-api.prod.svc
 # Images only by digest. The first digest and source-sha are set by hand from
 # the summary of job "image" of landing-web, in the PR that adds this folder;
 # from then on the deploy PR (.github, deploy-pr.yml) replaces them in place:
@@ -40,4 +46,17 @@ replacements:
           - data.SITE_URL
         options:
           delimiter: //
+          index: 1
+  # ID_URL=https://id.<host of the IngressRoute>.
+  - source:
+      kind: IngressRoute
+      fieldPath: metadata.annotations.nl-gitops/host
+    targets:
+      - select:
+          kind: ConfigMap
+          name: landing-web-config
+        fieldPaths:
+          - data.ID_URL
+        options:
+          delimiter: https://id.
           index: 1

@@ -36,7 +36,7 @@ The global setup (`tests/stack.ts`) writes `e2e/.env` (git-ignored): the project
 | `E2E_SUITE=failure` | the failure scenarios instead of the deploy-PR suite; `test:failure` sets it |
 | `E2E_KEEP=1` | keeps the stack after the run; `docker compose down -v` in `e2e/` removes it |
 
-id-web is on <http://localhost:3900>, Mailpit (UI and API) on <http://localhost:3901>, both on 127.0.0.1 only. While a stack is up (`E2E_KEEP=1`), `docker compose` in `e2e/` works on it as usual. A local change of the stack for one run goes into `e2e/compose.override.yaml` (git-ignored; compose or `stack.ts` merges it), never into `compose.yaml`.
+id-web is on <https://localhost:3900> (TLS by `id-web-tls`, as Traefik in prod, so the cookies have prod's names; the browser accepts the certificate of its own CA), Mailpit (UI and API) on <http://localhost:3901>, both on 127.0.0.1 only. While a stack is up (`E2E_KEEP=1`), `docker compose` in `e2e/` works on it as usual. A local change of the stack for one run goes into `e2e/compose.override.yaml` (git-ignored; compose or `stack.ts` merges it), never into `compose.yaml`.
 
 One project name and its ports are one run: a setup or teardown removes whatever runs under that name. Two worktrees can run at once when each has its own, in the second one for example:
 

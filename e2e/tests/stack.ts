@@ -19,10 +19,10 @@ const place = {
 }
 
 /** id-web and Mailpit's API on the host: the ports of ../compose.yaml. */
-export const WEB_URL = `http://localhost:${place.E2E_WEB_PORT}`
+export const WEB_URL = `https://localhost:${place.E2E_WEB_PORT}`
 export const MAILPIT_URL = `http://127.0.0.1:${place.E2E_MAILPIT_PORT}`
 /** The second id-web of ../compose.failure.yaml. Cookies ignore the port: a browser's session is on both. */
-export const WEB_2_URL = `http://localhost:${place.E2E_WEB_2_PORT}`
+export const WEB_2_URL = `https://localhost:${place.E2E_WEB_2_PORT}`
 
 export const E2E = path.resolve(import.meta.dirname, '..')
 const REPO = path.resolve(E2E, '..')
