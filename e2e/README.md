@@ -36,7 +36,7 @@ The global setup (`tests/stack.ts`) writes `e2e/.env` (git-ignored): the project
 | `E2E_SUITE=failure` | the failure scenarios instead of the deploy-PR suite; `test:failure` sets it |
 | `E2E_KEEP=1` | keeps the stack after the run; `docker compose down -v` in `e2e/` removes it |
 
-id-web is on <https://localhost:3900> (TLS by `id-web-tls`, as Traefik in prod, so the cookies have prod's names; the browser accepts the certificate of its own CA), Mailpit (UI and API) on <http://localhost:3901>, both on 127.0.0.1 only. While a stack is up (`E2E_KEEP=1`), `docker compose` in `e2e/` works on it as usual. A local change of the stack for one run goes into `e2e/compose.override.yaml` (git-ignored; compose or `stack.ts` merges it), never into `compose.yaml`.
+id-web is on <https://id.e2e.test:3900> and the landing on <https://e2e.test:3903> (TLS by `id-web-tls` and `landing-web-tls`, as Traefik in prod, so the cookies have prod's names; the browser accepts the certificate of its own CA), Mailpit (UI and API) on <http://localhost:3901>, all on 127.0.0.1 only. The browser of the tests maps the two names to 127.0.0.1 (`tests/playwright.config.ts`); to open them by hand, put them in `/etc/hosts`. While a stack is up (`E2E_KEEP=1`), `docker compose` in `e2e/` works on it as usual. A local change of the stack for one run goes into `e2e/compose.override.yaml` (git-ignored; compose or `stack.ts` merges it), never into `compose.yaml`.
 
 One project name and its ports are one run: a setup or teardown removes whatever runs under that name. Two worktrees can run at once when each has its own, in the second one for example:
 
@@ -69,6 +69,13 @@ In order, one browser, a new user every run (`tests/sign-in-to-receipt.spec.ts`)
 5. One receipt email per payment (pay-api → RabbitMQ → notifications-api → id-api for the address → SMTP).
 6. Sign-out ends the session at id-api, not only the cookie: with the old cookie put back, the session is no longer listed as this device.
 
+The two sites of one domain, in a browser of its own (`tests/shared-session.spec.ts`), on real names, so the session cookie has `Domain` as in prod:
+
+1. Sign-in from the landing: its link, the code on id-web, back on the landing with the person's address in the header.
+2. The session is one cookie on the whole domain, and id-web takes it with no second sign-in.
+3. Sign-out on the landing: the cookie goes, id-web asks to sign in, and the old cookie put back no longer opens the landing.
+4. Sign-out on id-web: the landing shows nobody signed in.
+
 ## Failure scenarios
 
 `pnpm --dir e2e/tests test:failure`, about 8 min with the images present. Tagged `@failure` in the title, so the deploy PRs do not run them. They are serial on one stack, with a new person (browser, email, client address) per test, and stop and start its parts with `docker compose` (`tests/failure/harness.ts`). A failed test gets the whole stack back before the next one.
@@ -76,6 +83,8 @@ In order, one browser, a new user every run (`tests/sign-in-to-receipt.spec.ts`)
 | Spec in `tests/failure/` | What happens | What must hold |
 |---|---|---|
 | `concurrency` | two tabs of one session past the refresh threshold load at once, in rounds | both stay signed in, also past the grace window of the old token |
+| `concurrency` | two sites of one session past the refresh threshold load at once, in rounds, each through its own id-api | both stay signed in, also past the grace window of the old token |
+| `concurrency` | the answer to a refresh gets lost: the old cookie comes back past the grace window | still signed in, with a new token, and the session goes on |
 | `concurrency` | sign-in, refresh and sign-out, each step on the replica the test chooses | a code asked for on one replica works on the other; each refreshes from the other's token; sign-out on one ends the session on the other |
 | `redis-down` | Redis stops | a code request and a right code get an error page and no code email goes out; pages keep working while the access token lasts, then say unavailable without a sign-out; back up, the session, the waiting code and new sign-ins work with nothing restarted |
 | `smtp-down` | Mailpit stops | the sign-in page says the code could not be sent, on the first request and on "send a new code"; back up, a new code arrives, and the failed one never does |
@@ -98,7 +107,7 @@ A test marked `test.fixme` stands for a defect in a service, named in its commen
 ## What it does not cover
 
 - Passkeys and Google sign-in, sign-in for the other sites (landing-web), the inbox page.
-- The cluster around the services: Traefik, the cookie on the whole domain (the stack is on `localhost`), NetworkPolicies, Kubernetes replicas behind a Service, probe timings, restarts of a pod that exits, SealedSecrets. The env in `compose.yaml` is written from each service's `src/config/env.ts`; a value missing only in the cluster's config is not caught.
+- The cluster around the services: Traefik, NetworkPolicies, Kubernetes replicas behind a Service, probe timings, restarts of a pod that exits, SealedSecrets. The env in `compose.yaml` is written from each service's `src/config/env.ts`; a value missing only in the cluster's config is not caught.
 - One RabbitMQ user for every api (the cluster has one per api with its own permissions); fresh databases only, no migration over existing data.
 - Real email (Resend over smtps) and the real payment provider.
 - In the failure scenarios: a dependency that hangs rather than goes away (a stopped container closes its connections, and Docker's DNS stops knowing its name); a store that loses data (a kill of Redis within its fsync second, a restored backup); an outage longer than a consumer's retries (the event goes to the DLQ); an SMTP outage for the emails of events; id-api, notifications-api or id-web themselves going down; a pod taken out of traffic by its readiness probe (here a service that is not ready still takes requests and answers them with its error). A kill of wallet-api is not sure to land between its commit and its ack; the republished event is what proves its deduplication.

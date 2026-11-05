@@ -78,15 +78,28 @@ jobs:
         with:
           persist-credentials: false
 
-      # The record of what this run tested, in the job summary.
+      # The record of what this run tested, in the job summary: only the images it
+      # starts, so that a deploy of anything else does not read as tested.
       - name: Deployed set
         run: |
           scripts/versions.sh | tee "$RUNNER_TEMP/versions.txt"
           {
-            echo '### Deployed set'
+            echo '### Images this run starts'
             echo '```'
-            cat "$RUNNER_TEMP/versions.txt"
+            head -n 1 "$RUNNER_TEMP/versions.txt"
+            tail -n +2 "$RUNNER_TEMP/versions.txt" | while read -r service rest; do
+              if grep -qF "\${$(tr 'a-z-' 'A-Z_' <<<"$service")_IMAGE:" e2e/compose.yaml; then
+                echo "$service $rest"
+              fi
+            done
             echo '```'
+            echo
+            echo 'In the deployed set, not started:'
+            tail -n +2 "$RUNNER_TEMP/versions.txt" | while read -r service _; do
+              if ! grep -qF "\${$(tr 'a-z-' 'A-Z_' <<<"$service")_IMAGE:" e2e/compose.yaml; then
+                echo "- $service"
+              fi
+            done
           } >> "$GITHUB_STEP_SUMMARY"
 
       # The input, or the pin; once apps/pay-api/prod exists stack.ts takes the deployed digest over the pin.

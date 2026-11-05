@@ -1,5 +1,5 @@
 import { defineConfig, devices } from '@playwright/test'
-import { FAILURE_SUITE, WEB_URL } from './stack'
+import { FAILURE_SUITE, LANDING_HOST, WEB_HOST, WEB_URL } from './stack'
 
 // One scenario against the real stack of ../compose.yaml, which the global
 // setup (stack.ts) starts and removes. Serial and without retries: the tests
@@ -43,6 +43,13 @@ export default defineConfig({
         locale: 'en-US',
         trace: 'retain-on-failure',
         screenshot: 'only-on-failure',
+        // The sites have real names, so that the session cookie is on the whole domain as in
+        // prod. Only the browser knows them: a test's `request` reaches Mailpit alone.
+        launchOptions: {
+            args: [
+                `--host-resolver-rules=MAP ${WEB_HOST} 127.0.0.1,MAP ${LANDING_HOST} 127.0.0.1`,
+            ],
+        },
     },
     projects: [
         {

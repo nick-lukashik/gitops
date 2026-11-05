@@ -1,5 +1,5 @@
 /**
- * The texts the scenario finds things by, in English: id-web's UI
+ * The texts the scenario finds things by, in English: the UI of id-web and landing-web
  * (src/i18n/messages/en.json) and notifications-api's email subjects
  * (src/mail/templates.ts). A copy change in a deploy fails the step that
  * uses it; update the text here in the same PR.
@@ -18,6 +18,11 @@ export const ui = {
         },
     },
     nav: {
+        signOut: 'Sign out',
+    },
+    /** landing-web (its src/i18n/messages/en.json). */
+    landing: {
+        signIn: 'Sign in',
         signOut: 'Sign out',
     },
     account: {
