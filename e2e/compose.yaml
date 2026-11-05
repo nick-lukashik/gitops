@@ -278,6 +278,11 @@ configs:
       {
         admin off
         skip_install_trust
+        # A container that starts changes the host's network, and Chromium then
+        # fails what it has in flight on an HTTP/2 connection (ERR_NETWORK_CHANGED).
+        servers {
+          protocols h1
+        }
       }
       https://localhost:{$$SITE_PORT} {
         tls internal
