@@ -121,21 +121,25 @@ test.describe('Redis stops @failure', () => {
         request,
     }) => {
         const person = await newPerson()
-        await signIn(person, request)
+        // After a scenario that stopped Redis: id-api's client reconnects a moment after it is healthy.
+        await expect(() => signIn(person, request)).toPass({
+            timeout: 60_000,
+        })
         const { page, email } = person
 
         await stop('redis')
         await signOutRefused(person)
         await start('redis')
 
+        // Until id-api's client has reconnected, a sign-out is refused the same way.
+        const cookie = await sessionCookie(person)
         await expect(async () => {
             await page.goto('/account')
             await expectAccount(page, email)
+            await signOut(page)
         }).toPass({
             timeout: 60_000,
         })
-        const cookie = await sessionCookie(person)
-        await signOut(page)
         await expectSessionOver(person, cookie)
     })
 })

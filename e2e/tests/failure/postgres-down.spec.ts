@@ -145,14 +145,15 @@ test.describe('Postgres stops @failure', () => {
         await signOutRefused(person)
         await start('postgres')
 
+        // Until id-api reaches Postgres again, a sign-out is refused the same way.
+        const cookie = await sessionCookie(person)
         await expect(async () => {
             await page.goto('/account')
             await expectAccount(page, email)
+            await signOut(page)
         }).toPass({
             timeout: 60_000,
         })
-        const cookie = await sessionCookie(person)
-        await signOut(page)
         await expectSessionOver(person, cookie)
     })
 })
