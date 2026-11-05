@@ -9,6 +9,7 @@ Services. Every folder `apps/<service>/prod` becomes Application `<service>-prod
 | `landing-web/prod` | the site on the root domain (repo `landing-web`, from `next-starter`) |
 | `id-web/prod` | the account site on `id.<domain>` (repo `id-web`) |
 | `id-api/prod`, `notifications-api/prod`, `wallet-api/prod` | the account services, internal: no route (`components/internal`), reached by id-web and each other |
+| `digests/prod` | the daily digest of Google Analytics in the Telegram topic Digests (repo `digests`): a CronJob, no server |
 
 ## A service folder
 
