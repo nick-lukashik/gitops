@@ -23,9 +23,9 @@ configMapGenerator:
       - SITE_URL=https://HOST
 images:
   - name: ghcr.io/nick-lukashik/id-web
-    digest: sha256:7ef2a1dcd8b6c9850fe34246ed8c1416511d663774387b78c74a095b505093c1
+    digest: sha256:4e102b65cb0255f379c00572e3668e20c8b094824680e3e6b2450b9ea855eed6
 commonAnnotations:
-  nick-lukashik.com/source-sha: "17418cb97f2d2c9f67e06dcd184ebb70ef03217c"
+  nick-lukashik.com/source-sha: "55d03090296696eb90ff3d10f3b81759e81597dc"
   nick-lukashik.com/source-repo: nick-lukashik/id-web
 replacements:
   # SITE_URL=https://<host of the IngressRoute>.
