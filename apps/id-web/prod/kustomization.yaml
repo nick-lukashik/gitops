@@ -1,5 +1,6 @@
 # The account site on id.<domain> (repo id-web): sign-in, account, wallet,
-# payments, notifications, and sign-in and sign-out for the other sites.
+# payments, notifications, the session cookie of the sites under the domain, and
+# sign-in and sign-out for a site on another domain.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: prod
@@ -16,7 +17,7 @@ configMapGenerator:
     literals:
       - LOG_LEVEL=info
       - ROBOTS=index
-      # Public on every page. It loads on the first visit; the banner can turn it off (README of the service).
+      # Public on every page. It loads on every visit; the banner only says so (README of the service).
       - GTM_ID=GTM-MTGKCHJ6
       # Filled from the route below: the domain lives only in components/settings.
       - SITE_URL=https://HOST
