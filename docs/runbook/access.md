@@ -68,3 +68,21 @@ kubectl -n monitoring exec alertmanager-kube-prometheus-stack-alertmanager-0 -c 
 `gitops` is public: Argo CD reads it over HTTPS without credentials (`repoURL: https://github.com/nick-lukashik/gitops.git`), and the AppProjects allow only that URL. The organization has deploy keys disabled, and no repo Secret exists in `argocd`.
 
 If the repo ever has to become private, Argo CD needs credentials first: a read-only token of a GitHub App in a SealedSecret of type `repository`, added in the same PR that changes the visibility.
+
+## Read-only access for an audit
+
+ServiceAccount `auditor` (`platform/policies/auditor.yaml`) reads the cluster: the built-in role `view`, nodes, RBAC, Argo CD applications, CNPG backups, alert rules and SealedSecrets, and may port-forward in `monitoring`. It cannot read Secrets or change anything. It can read pod logs and ConfigMaps. Owner steps:
+
+1. Share the node with the auditor in Tailscale: the kube API listens only there.
+2. Make a token that expires, and a kubeconfig from your own, without printing it:
+
+   ```sh
+   kubectl -n kube-system create token auditor --duration=720h >auditor.token
+   kubectl config view --minify --flatten -o json |
+     jq --rawfile t auditor.token '.users[0].user = {token: ($t | rtrimstr("\n"))}' >auditor.kubeconfig
+   rm auditor.token
+   ```
+
+3. Send `auditor.kubeconfig` through a channel for secrets, then delete your copy.
+
+The access ends with the token. To end it sooner, delete and recreate the ServiceAccount: its tokens stop working.

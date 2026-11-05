@@ -56,7 +56,7 @@ Once `apps/pay-api/prod` exists, the deployed digest wins over the pin, and the 
 
 ## CI
 
-[`.github/workflows/e2e.yml`](../.github/workflows/e2e.yml) runs the same command on PRs that change `apps/*/prod/**` (the deploy PRs) or the e2e, the failure scenarios every night, and both by hand (`workflow_dispatch`, with an optional pay-api image instead of the pin). The job summary records the deployed set under test and the pay-api image; a failed run uploads the Playwright report, traces and `compose.log` (artifact `e2e-report-deploy` or `e2e-report-failure`). It is not a required check.
+[`.github/workflows/e2e.yml`](../.github/workflows/e2e.yml) runs the same command on PRs that change `apps/*/prod/**` (the deploy PRs) or the e2e, the failure scenarios every night, with the result in the Telegram topic Alerts, and both by hand (`workflow_dispatch`, with an optional pay-api image instead of the pin, and `notify` to send the result too). The job summary records the deployed set under test and the pay-api image; a failed run uploads the Playwright report, traces and `compose.log` (artifact `e2e-report-deploy` or `e2e-report-failure`). The check `e2e` is required on `master`: every PR reports it, and a PR that changes none of those files passes without a run.
 
 ## What it covers
 

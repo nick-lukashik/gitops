@@ -5,3 +5,4 @@ resources:
   - priorityclasses.yaml
   - prod.yaml
   - monitoring.yaml
+  - auditor.yaml

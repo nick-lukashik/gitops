@@ -4,19 +4,15 @@ name: e2e
 # digest, their data stores and Mailpit in Docker Compose, one Playwright
 # scenario through id-web from the sign-in email to the receipt email. Runs on
 # PRs that change the deployed set (the deploy PRs) or the e2e itself, and by
-# hand. Images are pulled, never built. Not required by the master ruleset:
-# the owner reads it before merging a deploy PR. The failure scenarios (tag
-# @failure) stop parts of the stack and take longer: nightly and by hand, never
-# on a PR.
+# hand. Images are pulled, never built. The check `e2e` is required by the master
+# ruleset, so every PR reports it: one that changes none of those files passes
+# without a run. The failure scenarios (tag @failure) stop parts of the stack and
+# take longer: nightly and by hand, never on a PR. The nightly result goes to the
+# Telegram topic Alerts, either way.
 
 on:
   pull_request:
     branches: [master]
-    paths:
-      - "apps/*/prod/**"
-      - "e2e/**"
-      - "scripts/versions.sh"
-      - ".github/workflows/e2e.yml"
   schedule:
     - cron: "37 2 * * *"
   workflow_dispatch:
@@ -25,6 +21,10 @@ on:
         description: "pay-api instead of the pin in e2e/pay-api.env: ghcr.io/nick-lukashik/pay-api:<tag> or @sha256:<digest>. Empty uses the pin."
         type: string
         default: ""
+      notify:
+        description: "Send the result to Telegram, as the nightly run does"
+        type: boolean
+        default: false
 
 concurrency:
   group: e2e-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
@@ -33,10 +33,36 @@ concurrency:
 permissions: {}
 
 jobs:
-  e2e:
-    # A PR has the deploy suite under the check's old name, the nightly run the
-    # failure scenarios, a run by hand both.
-    name: ${{ matrix.suite == 'failure' && 'e2e failure scenarios' || 'e2e' }}
+  # Whether this PR needs a run. Here and not in `paths`: a workflow skipped by
+  # `paths` reports nothing, and a required check would wait for it for ever.
+  changes:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read
+    outputs:
+      run: ${{ steps.files.outputs.run }}
+    steps:
+      - id: files
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          files=$(gh api "repos/$REPO/pulls/$PR/files" --paginate --jq '.[].filename')
+          if grep -qE '^(apps/[^/]+/prod/|e2e/|scripts/versions\.sh$|\.github/workflows/e2e\.yml$)' <<<"$files"; then
+            echo "run=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "run=false" >>"$GITHUB_OUTPUT"
+          fi
+
+  suite:
+    # A PR has the deploy suite, the nightly run the failure scenarios, a run by
+    # hand both.
+    name: ${{ matrix.suite == 'failure' && 'e2e failure scenarios' || 'e2e deploy scenario' }}
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.run == 'true') }}
     strategy:
       fail-fast: false
       matrix:
@@ -118,3 +144,54 @@ jobs:
             e2e/tests/playwright-report/
             e2e/tests/test-results/
           retention-days: 7
+
+  # The required check: it always reports on a PR, whatever the run above did.
+  e2e:
+    name: e2e
+    needs:
+      - changes
+      - suite
+    if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions: {}
+    steps:
+      - env:
+          CHANGES: ${{ needs.changes.result }}
+          SUITE: ${{ needs.suite.result }}
+        run: |
+          [[ $CHANGES == success ]] || { echo "::error::could not tell what this PR changes: $CHANGES"; exit 1; }
+          [[ $SUITE == success || $SUITE == skipped ]] || { echo "::error::the end-to-end run: $SUITE"; exit 1; }
+
+  notify:
+    name: Nightly result in Telegram
+    needs: suite
+    if: ${{ !cancelled() && (github.event_name == 'schedule' || inputs.notify) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Send
+        env:
+          TG_TOKEN: ${{ secrets.OPS_TELEGRAM_TOKEN }}
+          RESULT: ${{ needs.suite.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          chat=$(yq -r '.telegram.chatId' components/settings/settings.yaml)
+          topic=$(yq -r '.telegram.topics.alerts' components/settings/settings.yaml)
+          if [[ $RESULT == success ]]; then
+            text="✅ Ночные тесты сбоев прошли."
+          else
+            text="❌ Ночные тесты сбоев не прошли: $RESULT."
+          fi
+          # The token through --config: it stays out of the process list.
+          printf 'url = "https://api.telegram.org/bot%s/sendMessage"\n' "$TG_TOKEN" |
+            curl -sS --fail --max-time 20 -o /dev/null --config - \
+              --data-urlencode "chat_id=$chat" \
+              --data-urlencode "message_thread_id=$topic" \
+              --data-urlencode "text=$text $RUN_URL"
