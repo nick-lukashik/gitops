@@ -87,6 +87,23 @@ kubectl -n prod get pods
 
 Loki rejected log lines in the last 10 minutes (warning), by `reason`: `rate_limited` or `stream_limit` (a pod logging in a loop), `greater_than_max_sample_age` (old lines after an outage), `line_too_long`. Find the noisy pod with `kubectl top pods -A` and its logs; the limits are in `platform/monitoring/loki/values.yaml`.
 
+### EtcdSnapshotTooOld
+
+No etcd snapshot has reached R2 for 13 hours (warning). K3s takes one every 12 hours (`etcd-snapshot-schedule-cron` in `infra/node/k3s/config.yaml`), so the last one failed or did not run. Nothing is down. Only a restore of the cluster objects from a snapshot (path B of `infra/docs/recovery.md`) would lose more than planned; the service data has its own backups.
+
+```sh
+kubectl get etcdsnapshotfiles.k3s.cattle.io --sort-by=.status.creationTime | tail -5
+kubectl get etcdsnapshotfiles.k3s.cattle.io <name> -o jsonpath='{.status.readyToUse} {.status.error.message}{"\n"}'
+ssh "deploy@${TS_HOST}" sudo k3s etcd-snapshot ls
+ssh "deploy@${TS_HOST}" sudo journalctl -u k3s --since=-14h | grep -i snapshot
+```
+
+The usual cause is R2: the key `r2-etcd` in `/etc/rancher/k3s/config.yaml.d/50-etcd-s3.yaml` no longer works, or the bucket `nl-etcd` is unavailable. After the fix take one now: `sudo k3s etcd-snapshot save`. The alert clears once the new object is ready.
+
+### EtcdSnapshotMetricMissing
+
+kube-state-metrics has reported no ready snapshot in R2 for 30 minutes (warning), so the age is unknown and [EtcdSnapshotTooOld](#etcdsnapshottooold) cannot fire. Either kube-state-metrics is down (`kubectl -n monitoring get deploy kube-prometheus-stack-kube-state-metrics`), or it cannot read the snapshot objects (its log, `rbac.extraRules` and `customResourceState` in `platform/monitoring/kube-prometheus-stack/values.yaml`), or no snapshot in R2 is left: check as in EtcdSnapshotTooOld.
+
 ## Workloads
 
 ### PodRestartingOften

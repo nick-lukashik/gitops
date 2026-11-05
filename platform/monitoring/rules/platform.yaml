@@ -51,6 +51,30 @@ spec:
             summary: Argo CD application {{ $labels.name }} is Degraded
             description: The application has been Degraded for 15 minutes.
             runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#argocdappdegraded
+    - name: etcd
+      rules:
+        # K3s uploads a snapshot to R2 every 12 hours (etcd-snapshot-schedule-cron in
+        # infra node/k3s/config.yaml). A local copy or a failed upload does not count.
+        - alert: EtcdSnapshotTooOld
+          expr: |
+            time() - max(kube_customresource_etcd_snapshot_created_timestamp_seconds{location=~"s3://.*",ready="true"}) > 13 * 3600
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: No etcd snapshot in R2 from the last 13 hours
+            description: K3s takes one every 12 hours, so the last one failed or did not run.
+            runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#etcdsnapshottooold
+        - alert: EtcdSnapshotMetricMissing
+          expr: |
+            absent(max(kube_customresource_etcd_snapshot_created_timestamp_seconds{location=~"s3://.*",ready="true"}))
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: The age of etcd snapshots in R2 is unknown
+            description: kube-state-metrics reports no ready snapshot in R2, so EtcdSnapshotTooOld cannot fire.
+            runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#etcdsnapshotmetricmissing
     - name: loki
       rules:
         # Loki rejects log lines (rate limits, too old, too long).
