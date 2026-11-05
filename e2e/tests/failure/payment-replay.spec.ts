@@ -54,10 +54,25 @@ test.describe('payment replays @failure', () => {
             1,
             2,
         ]) {
-            const replay = await context.request.fetch(press as Request, {
-                maxRedirects: 0,
-            })
-            expect(replay.status(), 'the replay reached the action').toBeLessThan(500)
+            // From the page: only the browser knows the site's name (playwright.config.ts). The
+            // browser adds the cookies and leaves out the headers a page may not set.
+            const status = await page.evaluate(
+                async ({ url, headers, body }) =>
+                    (
+                        await fetch(url, {
+                            method: 'POST',
+                            headers,
+                            body,
+                            redirect: 'manual',
+                        })
+                    ).status,
+                {
+                    url: (press as Request).url(),
+                    headers: await (press as Request).allHeaders(),
+                    body: (press as Request).postData(),
+                },
+            )
+            expect(status, 'the replay reached the action').toBeLessThan(500)
         }
         await expect.poll(completions, 'the replays reached pay-api').toBe(before + 2)
         await expectCreditedOnce(page, 550)
