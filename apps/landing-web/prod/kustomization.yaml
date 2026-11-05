@@ -16,6 +16,8 @@ configMapGenerator:
     literals:
       - LOG_LEVEL=info
       - ROBOTS=index
+      # Public on every page. Consent starts denied (README of the service).
+      - GTM_ID=GTM-MTGKCHJ6
       # Filled from the route below: the domain lives only in components/settings.
       - SITE_URL=https://HOST
       # Accounts on (README of landing-web): the account site, and id-api in the cluster.
