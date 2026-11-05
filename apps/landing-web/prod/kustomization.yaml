@@ -15,7 +15,7 @@ configMapGenerator:
     literals:
       - LOG_LEVEL=info
       - ROBOTS=index
-      # Public on every page. It loads on the first visit; the banner can turn it off (README of next-starter).
+      # Public on every page. It loads on every visit; the banner only says so (README of next-starter).
       - GTM_ID=GTM-MTGKCHJ6
       # Filled from the route below: the domain lives only in components/settings.
       - SITE_URL=https://HOST
