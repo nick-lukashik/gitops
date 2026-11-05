@@ -38,7 +38,9 @@ A restore makes a new cluster from R2; the old one stays until the new one is ch
            serverName: pg
    ```
 
-   and without `plugins` (a restored cluster must not archive into the same path, [below](#the-archive-folder-after-a-restore)).
+   and without `plugins` (a restored cluster must not archive into the same path, [below](#the-archive-folder-after-a-restore)). Without `database`, `owner` and `secret` under `recovery`, CNPG adds a database and a role `app`, which does no harm in a temporary cluster.
+
+   Namespace `data` denies ingress by default and `from-cnpg` selects only `cnpg.io/cluster: pg`, so add the same NetworkPolicy for `cnpg.io/cluster: pg-restore`: the operator has to reach its instance manager. Delete both when the check is over.
 2. Check the data in `pg-restore`, then point the services at it (`pg-restore-rw` in their `DATABASE_URL`) or restore into `pg` itself as [on a clean server](#into-pg-itself-on-a-clean-server), which deletes it first.
 
 ### Into `pg` itself on a clean server
