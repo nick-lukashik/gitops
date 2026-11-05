@@ -6,3 +6,4 @@ resources:
   - prod.yaml
   - monitoring.yaml
   - auditor.yaml
+  - web-session.sealedsecret.yaml

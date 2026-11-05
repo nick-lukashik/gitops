@@ -231,7 +231,7 @@ services:
       - /tmp
       - /app/.next/cache
     environment:
-      # https, behind id-web-tls: the cookies have prod's names (__Host-) and Secure.
+      # https, behind id-web-tls: the cookies have prod's names and Secure.
       SITE_URL: *origin
       ID_API_URL: http://id-api:3000
       WALLET_API_URL: http://wallet-api:3000

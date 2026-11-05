@@ -5,6 +5,8 @@ kind: Component
 # directions of web -> api: the NetworkPolicy of every api accepts it on http,
 # and NetworkPolicy api-clients (platform/policies/prod.yaml) gives its pods
 # egress to api pods on http. No other egress than DNS (components/service).
+# SESSION_SECRET: the key of the session cookie, one for every site under the
+# domain (SECRETS.md, web-session). Required: a pod starts only with it.
 # No migrations and no metrics endpoint: HTTP metrics come from Traefik.
 # Resources: the defaults of components/service.
 patches:
@@ -25,6 +27,12 @@ patches:
           spec:
             containers:
               - name: app
+                env:
+                  - name: SESSION_SECRET
+                    valueFrom:
+                      secretKeyRef:
+                        name: web-session
+                        key: SESSION_SECRET
                 volumeMounts:
                   - name: next-cache
                     mountPath: /app/.next/cache

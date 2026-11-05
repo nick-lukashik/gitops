@@ -14,6 +14,7 @@ Only SealedSecrets are in git; the repo is public, and a sealed value is safe th
 | `loki-r2` | `monitoring` | `S3_ENDPOINT`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | `r2-loki` (`uri`, `username`, `password`) | kubeseal | Loki: chunks and index in R2 bucket `nl-loki`. The endpoint holds the account ID, so it is sealed too |
 | `grafana-admin` | `monitoring` | `admin-user`, `admin-password` | not stored: random, nobody signs in with it | kubeseal | built-in Grafana admin |
 | `grafana-auth-proxy` | `monitoring` | `whitelist` | not stored: the pod network of the cluster | kubeseal | `auth.proxy.whitelist` of Grafana (E4) |
+| `web-session` | `prod` | `SESSION_SECRET` | not stored: random | kubeseal | `components/web`: the key of the session cookie, one for every site under the domain |
 | `<service>-secrets` | `prod` | secret env of the service (`KEY`) | `<service>-secrets`; for the account services generated and sealed with the data stores, plus `google-oauth` and `resend-smtp` merged in | kubeseal ([Service secrets](#service-secrets), [Data stores](#data-stores)) | `envFrom` of the pods and the api migrate Job |
 | `digests-secrets` | `prod` | `GA_PROPERTY_ID`, `GA_SERVICE_ACCOUNT_JSON`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `TELEGRAM_TOPIC_ID` | `ga-digest` (the JSON key, in its notes), `ops-telegram`; the chat and topic ids as in `ops-telegram-topics` | kubeseal | `envFrom` of CronJob `digests` |
 
@@ -89,6 +90,14 @@ openssl x509 -in "$CRT" -noout -subject -enddate
 openssl rand -base64 32 | tr -d '\n' |
   kubectl create secret generic grafana-admin -n monitoring --from-literal=admin-user=admin --from-file=admin-password=/dev/stdin --dry-run=client -o yaml |
   kubeseal --cert "$CRT" --format yaml >platform/monitoring/grafana/config/grafana-admin.sealedsecret.yaml
+```
+
+`web-session`, a random key. Changing it signs everyone out, and the pods read it at start, so the sites of `components/web` need a restart after the sync:
+
+```sh
+openssl rand -base64 32 | tr -d '\n' |
+  kubectl create secret generic web-session -n prod --from-file=SESSION_SECRET=/dev/stdin --dry-run=client -o yaml |
+  kubeseal --cert "$CRT" --format yaml >platform/policies/web-session.sealedsecret.yaml
 ```
 
 `grafana-auth-proxy`, the pod network of the node is taken from the cluster:
