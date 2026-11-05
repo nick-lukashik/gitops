@@ -183,3 +183,12 @@ spec:
             summary: "{{ $labels.namespace }}/{{ $labels.service }} keeps answering 503 to payment webhooks"
             description: For 30 minutes a webhook has reported a success without the money, and the provider's record does not show it or cannot be read.
             runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#paymentwebhooksdeferred
+        # A daily job that stopped running does not fail, so KubeJobFailed stays quiet.
+        - alert: CronJobOverdue
+          expr: time() - kube_cronjob_status_last_successful_time{namespace="prod"} > 93600
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.namespace }}/{{ $labels.cronjob }} has not succeeded for over 26 hours"
+            description: A job that runs every day has not finished successfully since yesterday; its digest did not arrive.
+            runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#cronjoboverdue

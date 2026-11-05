@@ -1,0 +1,20 @@
+# The daily digest of Google Analytics in the Telegram topic Digests (repo digests):
+# a CronJob, with no server, route or autoscaler. The secret holds the key and the ids.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: prod
+resources:
+  - cronjob.yaml
+  - networkpolicy.yaml
+  - digests-secrets.sealedsecret.yaml
+configMapGenerator:
+  - name: digests-config
+    literals:
+      - LOG_LEVEL=info
+# The first digest and source-sha are set by hand; then the deploy PR keeps them current.
+images:
+  - name: ghcr.io/nick-lukashik/digests
+    digest: sha256:d2a0875335713d199c4a0b3e8b581732f19fcf8c19697d8decc4d319d0d5ccae
+commonAnnotations:
+  nick-lukashik.com/source-sha: "26bada748fe3df3d90869eec7e23da9cf8c7af3d"
+  nick-lukashik.com/source-repo: nick-lukashik/digests

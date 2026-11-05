@@ -27,5 +27,6 @@ A green `make verify` before every PR (needs Docker). CI runs the same set, job 
 - A third-party image (not built from a starter) gets its own manifests and an entry in `THIRD_PARTY` of `scripts/check-apps.sh` (none today).
 - A platform component: an Application in `platform/<component>/application.yaml`, a line in `platform/kustomization.yaml`, a sync-wave in dependency order.
 - A new queue or binding in a service: also in `platform/data/stores/rabbitmq-topology.json` and in `CONSUMERS` of `scripts/check-rabbitmq-topology.mjs`, and the copy in that service's `test/fixtures/` (its test compares the two). The broker loads the file at boot, so an event finds its queue before the consumer ever started; a queue left out only exists once the consumer has run.
+- A scheduled job: `apps/<name>/prod` with its own CronJob and NetworkPolicy, and its name in `JOBS` of `scripts/check-apps.sh` (`apps/digests`). It gets the image and deploy PR rules of a service, and no server.
 - A new alert: a rule in `platform/monitoring/rules/` with `severity` and `runbook_url`, a unit test in `tests/` (without it CI fails), and its section in `docs/runbook/alerts.md`, which `runbook_url` points to.
 - Comments and documents: English only; YAML comments short.
