@@ -24,11 +24,11 @@ Request and limit of memory from the values in `platform/`. Short Jobs (`startup
 | Postgres 512/1024 + Barman sidecar 64/256 | `data` | 576 MiB | 1280 MiB |
 | RabbitMQ 256/512, Redis 64/256 | `data` | 320 MiB | 768 MiB |
 | **Platform, total** | | **≈ 4.8 GiB** | **≈ 10.4 GiB** |
-| Services: ResourceQuota `memory` | `prod` | 4 GiB | 8 GiB |
-| **All** | | **≈ 8.8 GiB (70%)** | **≈ 18.4 GiB (147%)** |
+| Services: ResourceQuota `memory` | `prod` | 6 GiB | 12 GiB |
+| **All** | | **≈ 10.8 GiB (86%)** | **≈ 22.4 GiB (179%)** |
 
-- The requests fit with room to spare. The limits exceed the node memory by a quarter: not all components reach their limit at once, and under pressure the kubelet evicts pods of lower priority first (`batch`, then `service`).
-- Every service runs at least two replicas (HorizontalPodAutoscaler 2 to 4 on CPU, `components/service`), so a service costs twice its pod in the `prod` quota and more while it is scaled out. When the quota is full, the autoscaler cannot add pods: that is the cap, and the quota grows in a PR when it is reached.
+- The requests fit. The limits are half as much again as the node memory: not all components reach their limit at once, and under pressure the kubelet evicts pods of lower priority first (`batch`, then `service`).
+- Every service runs at least two replicas (HorizontalPodAutoscaler 2 to 4 on CPU, `components/service`), so a service costs twice its pod in the `prod` quota and more while it is scaled out. When the quota is full, the autoscaler cannot add pods and a rollout cannot start its extra pod, so the quota must hold every service at 4 replicas plus a rollout: limits of 2304 MiB per replica of the five services make 9 GiB, with `pay-api` 11 GiB. The quota grows in a PR with each new service. The quota is only a count: at two replicas each the pods use about 0.8 GiB.
 - A container in `prod` without its own resources gets a 128 MiB request and a 256 MiB limit (LimitRange `defaults`). Services set their own in the components: web 128 MiB request / 384 MiB limit, api 192 MiB / 512 MiB, the api migrate Job 128 MiB / 512 MiB; a CPU request only, no CPU limit ([components/README.md](../components/README.md)).
 - Stage `E3-core` added the data stores (`platform/data`, about 1 GiB of requests). The services of `prod` with the account services: about 2 GiB of requests at two replicas each, inside the quota.
 

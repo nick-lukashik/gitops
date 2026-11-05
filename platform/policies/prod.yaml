@@ -6,8 +6,8 @@ metadata:
   namespace: prod
 spec:
   hard:
-    requests.memory: 4Gi
-    limits.memory: 8Gi
+    requests.memory: 6Gi
+    limits.memory: 12Gi
 ---
 apiVersion: v1
 kind: LimitRange
