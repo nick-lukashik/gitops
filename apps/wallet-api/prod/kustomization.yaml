@@ -22,9 +22,9 @@ configMapGenerator:
 # the summary of job "image" of wallet-api; then the deploy PR keeps them current.
 images:
   - name: ghcr.io/nick-lukashik/wallet-api
-    digest: sha256:edae63c146d876a8fa02f6d6c153bc7333411b3216354be473c720a35004de3f
+    digest: sha256:8eb0c8c0232eec8ab527b228e68636f2862a8147aa469fd0c25b2f9052c1aa56
 commonAnnotations:
-  nick-lukashik.com/source-sha: "3ee1fbca294924af39b50d3e6c1f0fc1b1207784"
+  nick-lukashik.com/source-sha: "6d426245386f1bea03b866e2e5acacee0123f81c"
   nick-lukashik.com/source-repo: nick-lukashik/wallet-api
 patches:
   # It calls other apis (JWKS of id-api at least): the one label for both
