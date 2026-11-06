@@ -33,9 +33,11 @@ done
 grep 'received log entry' "$WORK/out.log" >"$WORK/entries.log" || fail "no output from alloy (see $WORK/out.log)"
 [[ $(wc -l <"$WORK/entries.log") -ge $expected ]] || fail "expected $expected entries (see $WORK/out.log)"
 
-# Values from the fixtures that must not reach Loki.
+# Values from the fixtures that must not reach Loki. Without the timestamps of the log
+# line: their nanoseconds can read as one of these numbers.
+sed -E 's/(^ts| entry_timestamp)=[^ ]+//g' "$WORK/entries.log" >"$WORK/values.log"
 for leak in abc ss1 tok1 123456 4321 sec1 cookie1 bearer1 eyJhbGci; do
-  if grep -qF -- "$leak" "$WORK/entries.log"; then
+  if grep -qF -- "$leak" "$WORK/values.log"; then
     fail "not masked: $leak"
   fi
 done

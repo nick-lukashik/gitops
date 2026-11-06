@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { type BrowserContext, type Cookie, expect, type Page, test } from '@playwright/test'
 import { ui } from './copy'
 import { signInCode } from './mailpit'
-import { LANDING_HOST, LANDING_URL, SESSION_COOKIE, WEB_URL } from './stack'
+import { LANDING_HOST, LANDING_URL, LOCALE_COOKIE, SESSION_COOKIE, WEB_URL } from './stack'
 
 // Two sites of one domain and one person, in one browser: every test starts where
 // the previous one ended, and a failed one skips the rest.
@@ -129,4 +129,20 @@ test('sign-out on id-web ends the session on the landing too', async ({ request 
     await expect(page).toHaveURL(/\/login$/)
     await page.goto(`${LANDING_URL}/`)
     await expectNobody()
+})
+
+test('the language chosen on one site holds on the other, in a cookie on the whole domain', async () => {
+    await page.goto(`${WEB_URL}/login?lang=ru`)
+    await expect(page.locator('html')).toHaveAttribute('lang', 'ru')
+    expect((await context.cookies()).find(cookie => cookie.name === LOCALE_COOKIE)).toMatchObject({
+        domain: `.${LANDING_HOST}`,
+        value: 'ru',
+    })
+    await page.goto(`${LANDING_URL}/`)
+    await expect(page.locator('html')).toHaveAttribute('lang', 'ru')
+
+    await page.goto(`${LANDING_URL}/?lang=en`)
+    await expect(page.locator('html')).toHaveAttribute('lang', 'en')
+    await page.goto(`${WEB_URL}/login`)
+    await expect(page.locator('html')).toHaveAttribute('lang', 'en')
 })
