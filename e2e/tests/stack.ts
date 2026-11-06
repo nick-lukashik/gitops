@@ -33,6 +33,9 @@ export const WEB_2_URL = `https://${WEB_HOST}:${place.E2E_WEB_2_PORT}`
 /** The session cookie every site under the domain shares. */
 export const SESSION_COOKIE = '__Secure-nl_session'
 
+/** The language of every site under the domain. */
+export const LOCALE_COOKIE = 'nl_locale'
+
 export const E2E = path.resolve(import.meta.dirname, '..')
 const REPO = path.resolve(E2E, '..')
 const OUTPUT = path.join(import.meta.dirname, 'test-results')

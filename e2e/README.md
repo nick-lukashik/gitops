@@ -75,6 +75,7 @@ The two sites of one domain, in a browser of its own (`tests/shared-session.spec
 2. The session is one cookie on the whole domain, and id-web takes it with no second sign-in.
 3. Sign-out on the landing: the cookie goes, id-web asks to sign in, and the old cookie put back no longer opens the landing.
 4. Sign-out on id-web: the landing shows nobody signed in.
+5. The language chosen on one site holds on the other, in one cookie on the whole domain, both ways.
 
 ## Failure scenarios
 
