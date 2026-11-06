@@ -2,14 +2,18 @@
 # are the digests of apps/<service>/prod (scripts/versions.sh --env) and the
 # pin in pay-api.env; they and the secrets of the run come from .env, which
 # tests/stack.ts writes before every run. Data stores as in platform/data/stores,
-# Mailpit for email. Ports on 127.0.0.1 only: id-web 3900, Mailpit 3901 unless
-# .env says otherwise, id-web behind TLS. COMPOSE_PROJECT_NAME in .env wins over
-# this name.
+# Mailpit for email. Ports on 127.0.0.1 only: id-web 3900, Mailpit 3901, the
+# landing 3903 unless .env says otherwise, the sites behind TLS. COMPOSE_PROJECT_NAME
+# in .env wins over this name.
 name: nl-e2e
 
 # id-web's public origin: the issuer of access tokens, links in emails, the
-# fake checkout. Keep it equal to WEB_URL in tests/stack.ts.
-x-origin: &origin https://localhost:${E2E_WEB_PORT:-3900}
+# fake checkout. Keep it equal to WEB_URL in tests/stack.ts. The sites have real
+# names, as in prod, so that the session cookie is on the whole domain; the browser
+# finds them through tests/playwright.config.ts.
+x-origin: &origin https://id.e2e.test:${E2E_WEB_PORT:-3900}
+# The landing's. Keep it equal to LANDING_URL in tests/stack.ts.
+x-landing-origin: &landing-origin https://e2e.test:${E2E_LANDING_PORT:-3903}
 
 # The pod contract (components/service): the image's non-root user, read-only
 # root filesystem with /tmp writable, no capabilities. The service images are
@@ -241,7 +245,9 @@ services:
       WALLET_API_URL: http://wallet-api:3000
       PAY_API_URL: http://pay-api:3000
       NOTIFICATIONS_API_URL: http://notifications-api:3000
-      SESSION_SECRET: ${ID_WEB_SESSION_SECRET:?}
+      SESSION_SECRET: ${SESSION_SECRET:?}
+      # The site a sign-in may go back to.
+      FORM_ACTION_ORIGINS: *landing-origin
       # Off in prod until pay-api runs there; the payment scenario needs the pages.
       PAYMENTS_ENABLED: "true"
     depends_on:
@@ -263,6 +269,7 @@ services:
       - source: web-tls
         target: /etc/caddy/Caddyfile
     environment:
+      SITE_HOST: id.e2e.test
       SITE_PORT: ${E2E_WEB_PORT:-3900}
       UPSTREAM: id-web:3000
     ports:
@@ -274,6 +281,44 @@ services:
       retries: 60
     depends_on:
       id-web:
+        condition: service_healthy
+
+  # The real site: the session cookie of id-web under the same key (web-session in
+  # the cluster), and id-api for the name and for refreshes.
+  landing-web:
+    <<: *service
+    image: ${LANDING_WEB_IMAGE:?}
+    # The Next.js cache is the other writable directory, as in id-web.
+    tmpfs:
+      - /tmp
+      - /app/.next/cache
+    environment:
+      SITE_URL: *landing-origin
+      ID_URL: *origin
+      ID_API_URL: http://id-api:3000
+      SESSION_SECRET: ${SESSION_SECRET:?}
+    depends_on:
+      id-api:
+        condition: service_healthy
+
+  landing-web-tls:
+    image: docker.io/library/caddy:2.10-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
+    configs:
+      - source: web-tls
+        target: /etc/caddy/Caddyfile
+    environment:
+      SITE_HOST: e2e.test
+      SITE_PORT: ${E2E_LANDING_PORT:-3903}
+      UPSTREAM: landing-web:3000
+    ports:
+      - 127.0.0.1:${E2E_LANDING_PORT:-3903}:${E2E_LANDING_PORT:-3903}
+    healthcheck:
+      test: [CMD-SHELL, 'wget --no-check-certificate -q -O /dev/null "https://localhost:$$SITE_PORT/health/ready"']
+      interval: 1s
+      timeout: 5s
+      retries: 60
+    depends_on:
+      landing-web:
         condition: service_healthy
 
 configs:
@@ -288,7 +333,7 @@ configs:
           protocols h1
         }
       }
-      https://localhost:{$$SITE_PORT} {
+      https://{$$SITE_HOST}:{$$SITE_PORT}, https://localhost:{$$SITE_PORT} {
         tls internal
         reverse_proxy {$$UPSTREAM}
       }

@@ -16,13 +16,19 @@ const place = {
     E2E_WEB_PORT: process.env.E2E_WEB_PORT || '3900',
     E2E_MAILPIT_PORT: process.env.E2E_MAILPIT_PORT || '3901',
     E2E_WEB_2_PORT: process.env.E2E_WEB_2_PORT || '3902',
+    E2E_LANDING_PORT: process.env.E2E_LANDING_PORT || '3903',
 }
 
-/** id-web and Mailpit's API on the host: the ports of ../compose.yaml. */
-export const WEB_URL = `https://localhost:${place.E2E_WEB_PORT}`
+/** The names of the sites under one domain, as in prod. Only the browser knows them: playwright.config.ts. */
+export const WEB_HOST = 'id.e2e.test'
+export const LANDING_HOST = 'e2e.test'
+
+/** id-web, the landing and Mailpit's API on the host: the ports of ../compose.yaml. */
+export const WEB_URL = `https://${WEB_HOST}:${place.E2E_WEB_PORT}`
+export const LANDING_URL = `https://${LANDING_HOST}:${place.E2E_LANDING_PORT}`
 export const MAILPIT_URL = `http://127.0.0.1:${place.E2E_MAILPIT_PORT}`
 /** The second id-web of ../compose.failure.yaml. Cookies ignore the port: a browser's session is on both. */
-export const WEB_2_URL = `https://localhost:${place.E2E_WEB_2_PORT}`
+export const WEB_2_URL = `https://${WEB_HOST}:${place.E2E_WEB_2_PORT}`
 
 /** The session cookie every site under the domain shares. */
 export const SESSION_COOKIE = '__Secure-nl_session'
@@ -125,7 +131,7 @@ function secrets(): Record<string, string> {
         ID_INTERNAL_TOKEN: random(),
         NOTIFICATIONS_INTERNAL_TOKEN: random(),
         WALLET_INTERNAL_TOKEN: random(),
-        ID_WEB_SESSION_SECRET: random(),
+        SESSION_SECRET: random(),
     }
 }
 
