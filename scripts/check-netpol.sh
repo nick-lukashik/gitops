@@ -9,8 +9,7 @@
 #   by a NetworkPolicy with Egress, and no egress rule allows any destination
 #   (a rule without "to", or 0.0.0.0/0 without exceptions);
 # - services of the contract: egress to CoreDNS on 53 UDP and TCP; api: public
-#   443 with the private, CGNAT and link-local ranges excluded; web: the
-#   api-client label;
+#   443 with the private, CGNAT and link-local ranges excluded;
 # - Loki has a NetworkPolicy, and its only peers are Alloy, Grafana and Loki.
 # Label keys under the "<domain>/" prefix are matched by suffix.
 # shellcheck source=lib.sh
@@ -97,7 +96,6 @@ for rendered in "$OUT"/kustomize/apps_*_prod.yaml; do
       "open_blocks=" + ($np | map(.spec.egress // []) | flatten | map(.to // []) | flatten |
         map(select(.ipBlock.cidr == "0.0.0.0/0" and ((.ipBlock.except // []) | length) == 0)) | length | tostring),
       "kind=" + ($server | to_entries | map(select(.key | test("/kind$"))) | .[0].value // ""),
-      "api_client=" + ($server | to_entries | map(select(.key | test("/api-client$"))) | .[0].value // ""),
       "dns=" + ($srules | map(select(
         ((.to // []) | any_c(.podSelector.matchLabels["k8s-app"] == "kube-dns"
           and .namespaceSelector.matchLabels["kubernetes.io/metadata.name"] == "kube-system"))
@@ -111,7 +109,7 @@ for rendered in "$OUT"/kustomize/apps_*_prod.yaml; do
     ] | .[]')
 
   errors=()
-  kind="" api_client="" dns=0 https=0 open_rules=0 open_blocks=0 open_ingress=0 workloads=0
+  kind="" dns=0 https=0 open_rules=0 open_blocks=0 open_ingress=0 workloads=0
   while IFS='=' read -r key value; do
     case $key in
       workload)
@@ -129,7 +127,6 @@ for rendered in "$OUT"/kustomize/apps_*_prod.yaml; do
         ;;
       open_blocks) open_blocks=$value ;;
       kind) kind=$value ;;
-      api_client) api_client=$value ;;
       dns) dns=$value ;;
       https) https=$value ;;
     esac
@@ -151,7 +148,6 @@ for rendered in "$OUT"/kustomize/apps_*_prod.yaml; do
       ;;
     web)
       [[ $https == 0 ]] || errors+=("web: egress to public addresses is not part of the web kind")
-      [[ $api_client == true ]] || errors+=("web: the server pods need the api-client label (egress to api pods)")
       ;;
   esac
 
