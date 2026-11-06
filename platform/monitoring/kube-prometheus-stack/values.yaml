@@ -166,6 +166,34 @@ kube-state-metrics:
       memory: 64Mi
     limits:
       memory: 128Mi
+  # The age of the newest etcd snapshot (alerts EtcdSnapshot* in ../rules/platform.yaml),
+  # from the objects K3s keeps for every snapshot: no scrape of K3s needed, and it
+  # survives a restart of K3s, where its own snapshot counters start empty.
+  rbac:
+    extraRules:
+      - apiGroups: [k3s.cattle.io]
+        resources: [etcdsnapshotfiles]
+        verbs: [list, watch]
+  customResourceState:
+    enabled: true
+    config:
+      kind: CustomResourceStateMetrics
+      spec:
+        resources:
+          - groupVersionKind:
+              group: k3s.cattle.io
+              kind: ETCDSnapshotFile
+              version: v1
+            labelsFromPath:
+              location: [spec, location]
+              ready: [status, readyToUse]
+            metrics:
+              - name: etcd_snapshot_created_timestamp_seconds
+                help: When K3s took the etcd snapshot.
+                each:
+                  type: Gauge
+                  gauge:
+                    path: [status, creationTime]
 
 prometheus-node-exporter:
   # hostNetwork/hostPID/hostPath: lives in the privileged namespace.

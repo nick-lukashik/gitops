@@ -102,3 +102,56 @@ tests:
               summary: Loki discards log lines (rate_limited)
               description: Loki rejected log lines in the last 10 minutes.
               runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#lokidiscardingsamples
+
+  - name: the newest ready snapshot in R2 decides; a local copy and a failed upload do not count
+    interval: 5m
+    input_series:
+      # time() is 0 at the start of the test.
+      - series: 'kube_customresource_etcd_snapshot_created_timestamp_seconds{location="s3://nl-etcd/etcd-snapshot-1",ready="true"}'
+        values: '-43200x170'
+      - series: 'kube_customresource_etcd_snapshot_created_timestamp_seconds{location="s3://nl-etcd/etcd-snapshot-2",ready="true"}'
+        values: '0x170'
+      - series: 'kube_customresource_etcd_snapshot_created_timestamp_seconds{location="file:///var/lib/rancher/k3s/server/db/snapshots/etcd-snapshot-3",ready="true"}'
+        values: '36000x170'
+      - series: 'kube_customresource_etcd_snapshot_created_timestamp_seconds{location="s3://nl-etcd/etcd-snapshot-3",ready="false"}'
+        values: '36000x170'
+    alert_rule_test:
+      - eval_time: 13h
+        alertname: EtcdSnapshotTooOld
+        exp_alerts: []
+      - eval_time: 13h10m
+        alertname: EtcdSnapshotTooOld
+        exp_alerts: []
+      - eval_time: 13h30m
+        alertname: EtcdSnapshotTooOld
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: No etcd snapshot in R2 from the last 13 hours
+              description: K3s takes one every 12 hours, so the last one failed or did not run.
+              runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#etcdsnapshottooold
+      - eval_time: 13h30m
+        alertname: EtcdSnapshotMetricMissing
+        exp_alerts: []
+
+  - name: only a local copy and a failed upload, so nothing is known about R2
+    interval: 1m
+    input_series:
+      - series: 'kube_customresource_etcd_snapshot_created_timestamp_seconds{location="file:///var/lib/rancher/k3s/server/db/snapshots/etcd-snapshot-1",ready="true"}'
+        values: '0x40'
+      - series: 'kube_customresource_etcd_snapshot_created_timestamp_seconds{location="s3://nl-etcd/etcd-snapshot-1",ready="false"}'
+        values: '0x40'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: EtcdSnapshotMetricMissing
+        exp_alerts: []
+      - eval_time: 35m
+        alertname: EtcdSnapshotMetricMissing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: The age of etcd snapshots in R2 is unknown
+              description: kube-state-metrics reports no ready snapshot in R2, so EtcdSnapshotTooOld cannot fire.
+              runbook_url: https://github.com/nick-lukashik/gitops/blob/master/docs/runbook/alerts.md#etcdsnapshotmetricmissing

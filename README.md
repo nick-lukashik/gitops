@@ -235,7 +235,7 @@ A merge of a deploy PR (or a rollback PR) changes `apps/<service>/prod/kustomiza
 
 - [docs/runbook/deploy.md](docs/runbook/deploy.md): the e2e check and the diff before a merge, rollback, pausing auto-sync, a failed migration.
 - [docs/runbook/alerts.md](docs/runbook/alerts.md): what each alert means and what to check first.
-- [docs/runbook/access.md](docs/runbook/access.md): Argo CD, Grafana, Alertmanager over port-forward; the admin password; repo access of a public `gitops`; read-only access for an audit (`auditor`).
+- [docs/runbook/access.md](docs/runbook/access.md): Argo CD, Grafana, Alertmanager over port-forward; the admin password; repo access of a public `gitops`.
 - [docs/runbook/postgres.md](docs/runbook/postgres.md): the Postgres cluster, its backups to R2, a point-in-time restore.
 - [docs/runbook/accounts.md](docs/runbook/accounts.md): a person's data on request: a copy, deleting the account.
 - [docs/resources.md](docs/resources.md): memory and disk budget, priorities, Pod Security.
