@@ -42,18 +42,3 @@ patches:
                   app.kubernetes.io/name: id-web
           ports:
             - port: http
-  # It calls other apis (JWKS of id-api at least): the one label for both
-  # directions of api calls (platform/policies/prod.yaml, components/api).
-  - target:
-      kind: Deployment
-      labelSelector: app.kubernetes.io/component=server
-    patch: |-
-      apiVersion: apps/v1
-      kind: Deployment
-      metadata:
-        name: any
-      spec:
-        template:
-          metadata:
-            labels:
-              nick-lukashik.com/api-client: "true"

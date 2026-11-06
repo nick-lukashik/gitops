@@ -29,7 +29,7 @@ The name comes from ConfigMap `service` `.data.name` (local config of the servic
 | Resources | requests 50m / 128 MiB, limit 384 MiB, no CPU limit | requests 100m / 192 MiB, limit 512 MiB | the `service` defaults |
 | Config | `envFrom`: ConfigMap `<name>-config` (required), Secret `<name>-secrets` (optional) | the Job reads the same | |
 | Route | IngressRoute `<name>` on `websecure` with `real-ip@file`; `components/api` adds `body-limit@file` (request body at most 1 MiB, 413 above). Web routes enforce the limit in the app: Traefik buffering also buffers whole responses and would break streamed HTML; host in annotation `nl-gitops/host` | | |
-| Labels | pod: `app.kubernetes.io/name: <name>`, `app.kubernetes.io/component: server` | + `nick-lukashik.com/kind: api` | + `nick-lukashik.com/kind: web`, `nick-lukashik.com/api-client: "true"` |
+| Labels | pod: `app.kubernetes.io/name: <name>`, `app.kubernetes.io/component: server` | + `nick-lukashik.com/kind: api` | + `nick-lukashik.com/kind: web` |
 | Network in | NetworkPolicy `<name>`: Traefik on `http` | + the callers the api lists in `apps/<name>/prod` on `http`, Prometheus on `metrics` | |
 | Network out | CoreDNS only (53 UDP/TCP) | + namespaces labelled `nick-lukashik.com/data: "true"` (stage 3), public addresses on 443 (private, CGNAT, link-local, loopback excluded); NetworkPolicy `<name>-migrate`: the Job gets CoreDNS and the data namespaces | api pods on `http`: NetworkPolicy `api-clients` of `platform/policies/prod.yaml` selects the `kind` label; the called api decides who gets through |
 | Metrics | | ServiceMonitor `<name>` on `metrics`, `/metrics` | none (Traefik has the HTTP metrics) |

@@ -1,10 +1,10 @@
 apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 # web kind (Next.js), after components/service: writable /app/.next/cache,
-# pod label kind=web and the api-client pod label. That label is both
-# directions of web -> api: the NetworkPolicy of every api accepts it on http,
-# and NetworkPolicy api-clients (platform/policies/prod.yaml) gives its pods
-# egress to api pods on http. No other egress than DNS (components/service).
+# pod label kind=web. With that label NetworkPolicy api-clients
+# (platform/policies/prod.yaml) gives its pods egress to api pods on http, and
+# the called api lists it as a caller in apps/<name>/prod. No other egress than
+# DNS (components/service).
 # SESSION_SECRET: the key of the session cookie, one for every site under the
 # domain (SECRETS.md, web-session). Required: a pod starts only with it.
 # No migrations and no metrics endpoint: HTTP metrics come from Traefik.
@@ -23,7 +23,6 @@ patches:
           metadata:
             labels:
               nick-lukashik.com/kind: web
-              nick-lukashik.com/api-client: "true"
           spec:
             containers:
               - name: app
