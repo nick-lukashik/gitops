@@ -1,9 +1,9 @@
 apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 # An api that no browser reaches, after components/api instead of a host: no
-# IngressRoute and no ingress from Traefik. Only pods with the api-client
-# label (id-web, the other apis) and Prometheus reach it; the smoke check
-# after a deploy skips it (no route).
+# IngressRoute and no ingress from Traefik. Only its callers (listed in
+# apps/<name>/prod) and Prometheus reach it; the smoke check after a deploy
+# skips it (no route).
 patches:
   - target:
       kind: IngressRoute

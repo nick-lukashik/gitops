@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Network isolation (service runtime contract, platform/policies):
 # - prod denies ingress and egress by default, and NetworkPolicy api-clients
-#   gives the api-client label egress to api pods;
+#   gives web and api pods egress to api pods;
+# - an ingress rule has a "from", and a caller in the namespace is named after
+#   an app of apps/ and nothing else, so that no label opens several apis;
 # - monitoring and monitoring-node deny ingress by default;
 # - every workload of every apps/*/prod (third-party apps included) is selected
 #   by a NetworkPolicy with Egress, and no egress rule allows any destination
@@ -58,9 +60,9 @@ for ns in monitoring monitoring-node; do
   check "$ns denies ingress by default" "$(q "$policies" "map(select($deny
     and .metadata.namespace == \"$ns\" and (.spec.policyTypes | any_c(. == \"Ingress\")))) | length > 0")"
 done
-check "prod: api-client pods have egress to api pods on 3000" "$(q "$policies" 'map(select(.kind == "NetworkPolicy"
+check "prod: web and api pods have egress to api pods on 3000" "$(q "$policies" 'map(select(.kind == "NetworkPolicy"
   and .metadata.namespace == "prod"
-  and ((.spec.podSelector.matchLabels // {}) | to_entries | any_c((.key | test("/api-client$")) and .value == "true"))
+  and ((.spec.podSelector.matchExpressions // []) | any_c((.key | test("/kind$")) and .operator == "Exists"))
   and ((.spec.egress // []) | any_c(
     ((.to // []) | any_c((.podSelector.matchLabels // {}) | to_entries | any_c((.key | test("/kind$")) and .value == "api")))
     and ((.ports // []) | any_c(.port == 3000)))))) | length > 0')"
@@ -87,6 +89,11 @@ for rendered in "$OUT"/kustomize/apps_*_prod.yaml; do
         "workload=" + .kind + "/" + .metadata.name + ":" +
         ($np | map(select((.spec.podSelector.matchLabels // {}) | to_entries | all_c(. as $e | ($l | .[$e.key]) == $e.value))) | length | tostring)),
       "open_rules=" + ($np | map(.spec.egress // []) | flatten | map(select((.to // []) | length == 0)) | length | tostring),
+      "open_ingress=" + ($all | map(select(.kind == "NetworkPolicy")) | map(.spec.ingress // []) | flatten |
+        map(select((.from // []) | length == 0)) | length | tostring),
+      ($all | map(select(.kind == "NetworkPolicy")) | map(.spec.ingress // []) | flatten | map(.from // []) | flatten |
+        map(select(has("namespaceSelector") | not)) | .[] |
+        "caller=" + ((.podSelector.matchLabels // {}) | to_entries | map(.key + ":" + .value) | join(","))),
       "open_blocks=" + ($np | map(.spec.egress // []) | flatten | map(.to // []) | flatten |
         map(select(.ipBlock.cidr == "0.0.0.0/0" and ((.ipBlock.except // []) | length) == 0)) | length | tostring),
       "kind=" + ($server | to_entries | map(select(.key | test("/kind$"))) | .[0].value // ""),
@@ -104,7 +111,7 @@ for rendered in "$OUT"/kustomize/apps_*_prod.yaml; do
     ] | .[]')
 
   errors=()
-  kind="" api_client="" dns=0 https=0 open_rules=0 open_blocks=0 workloads=0
+  kind="" api_client="" dns=0 https=0 open_rules=0 open_blocks=0 open_ingress=0 workloads=0
   while IFS='=' read -r key value; do
     case $key in
       workload)
@@ -112,6 +119,14 @@ for rendered in "$OUT"/kustomize/apps_*_prod.yaml; do
         [[ ${value##*:} -gt 0 ]] || errors+=("${value%:*} is not selected by a NetworkPolicy with Egress")
         ;;
       open_rules) open_rules=$value ;;
+      open_ingress) open_ingress=$value ;;
+      caller)
+        if [[ ! $value =~ ^app\.kubernetes\.io/name:([a-z0-9-]+)$ ]]; then
+          errors+=("a caller is not named by app.kubernetes.io/name alone: $value")
+        elif [[ ! -d apps/${BASH_REMATCH[1]} ]]; then
+          errors+=("the caller ${BASH_REMATCH[1]} has no folder in apps/")
+        fi
+        ;;
       open_blocks) open_blocks=$value ;;
       kind) kind=$value ;;
       api_client) api_client=$value ;;
@@ -122,6 +137,7 @@ for rendered in "$OUT"/kustomize/apps_*_prod.yaml; do
 
   [[ $workloads -gt 0 ]] || errors+=("no workload rendered")
   [[ $open_rules == 0 ]] || errors+=("$open_rules egress rule(s) without 'to' allow any destination")
+  [[ $open_ingress == 0 ]] || errors+=("$open_ingress ingress rule(s) without 'from' allow any source")
   [[ $open_blocks == 0 ]] || errors+=("$open_blocks egress rule(s) to 0.0.0.0/0 without exceptions")
   case $kind in
     api | web)
