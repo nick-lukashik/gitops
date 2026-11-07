@@ -8,6 +8,8 @@ Services. Every folder `apps/<service>/prod` becomes Application `<service>-prod
 | `_example-api/prod` | template of an api service (NestJS), same |
 | `landing-web/prod` | the site on the root domain (repo `landing-web`, from `next-starter`) |
 | `id-web/prod` | the account site on `id.<domain>` (repo `id-web`) |
+| `tailor-web/prod` | Tailor on `tailor.<domain>` (repo `tailor-web`): read-only `/api` proxy to tailor-api until sign-in |
+| `tailor-api/prod` | the API of Tailor (repo `tailor-api`), database `tailor`. Its route is `cv.<domain>`, rewritten under `/api/v1/cv` by its own Middleware, so only the CV files are public |
 | `id-api/prod`, `notifications-api/prod`, `wallet-api/prod` | the account services, internal: no route (`components/internal`), reached by id-web and each other |
 | `digests/prod` | the daily digest of Google Analytics in the Telegram topic Digests (repo `digests`): a CronJob, no server |
 

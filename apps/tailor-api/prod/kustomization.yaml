@@ -1,0 +1,59 @@
+# Tailor API (repo tailor-api): applications for tailor-web, and the CV files
+# on cv.<domain>, the only part of it that is public.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: prod
+resources:
+  - service.yaml
+  - middleware.yaml
+  - tailor-api-secrets.sealedsecret.yaml
+components:
+  - ../../../components/service
+  - ../../../components/api
+  - ../../../components/subdomain
+# Non-secret runtime env of the pods and the migrate Job (envFrom). Everything
+# else has the production value as its default in the service.
+configMapGenerator:
+  - name: tailor-api-config
+    literals:
+      - LOG_LEVEL=info
+      # 4 replicas x 5 connections per api at most (docs/runbook/postgres.md).
+      - DATABASE_POOL_MAX=5
+      # Behind Traefik: the client address of the CV requests.
+      - TRUST_PROXY_HOPS=1
+# Images only by digest. The first digest and source-sha are set by hand from
+# the summary of job "image" of tailor-api; then the deploy PR keeps them current.
+images:
+  - name: ghcr.io/nick-lukashik/tailor-api
+    digest: sha256:78ca830476b45a2af5534afdc86ac9656bcd0d38a00e6fa305a50d1c4817152e
+commonAnnotations:
+  nick-lukashik.com/source-sha: "c12c4dd1cf7addf30d0f61a88200d5c4648df472"
+  nick-lukashik.com/source-repo: nick-lukashik/tailor-api
+patches:
+  # cv.<domain> reaches only the CV files (middleware.yaml), after the shared middlewares.
+  # The smoke reads the CV of the first demo application (tailor-api, migration 0001_demo_data).
+  - target:
+      kind: IngressRoute
+    patch: |-
+      - op: add
+        path: /spec/routes/0/middlewares/-
+        value:
+          name: tailor-api-cv
+      - op: replace
+        path: /metadata/annotations/nl-gitops~1smoke-paths
+        value: /019a5f00-0000-7000-8000-000000000001/Nick-Lukashik-Senior-Full-Stack-Engineer-CV.pdf
+  # Who may call this api, one entry per caller. A caller missing here gets a timeout, and
+  # only in prod: e2e runs without network policies.
+  - target:
+      kind: NetworkPolicy
+      labelSelector: app.kubernetes.io/component=server
+    patch: |-
+      - op: add
+        path: /spec/ingress/-
+        value:
+          from:
+            - podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: tailor-web
+          ports:
+            - port: http
