@@ -42,6 +42,10 @@ patches:
       - op: replace
         path: /metadata/annotations/nl-gitops~1smoke-paths
         value: /019a5f00-0000-7000-8000-000000000001/Nick-Lukashik-Senior-Full-Stack-Engineer-CV.pdf
+      # /health/ready is not public on cv.<domain>: the smoke waits for the version on the CV.
+      - op: add
+        path: /metadata/annotations/nl-gitops~1health-path
+        value: /019a5f00-0000-7000-8000-000000000001/Nick-Lukashik-Senior-Full-Stack-Engineer-CV.pdf
   # Who may call this api, one entry per caller. A caller missing here gets a timeout, and
   # only in prod: e2e runs without network policies.
   - target:

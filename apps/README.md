@@ -67,3 +67,8 @@ is `/openapi.json`. Override the annotation in the service folder with a real
 functional check. The example API uses `/api/v1/notes?limit=1`; the example web
 uses `/ /api/v1/notes?limit=1`, so a degraded readiness response cannot hide a
 broken backend. Do not include tokens or other secrets in paths.
+
+The smoke first waits until `/health/ready` answers 200 with header
+`x-app-version` equal to the deployed SHA. A route that does not expose it
+(`tailor-api` on `cv.<domain>`, rewritten under `/api/v1/cv`) names another
+read-only path with that header in `nl-gitops/health-path`.
