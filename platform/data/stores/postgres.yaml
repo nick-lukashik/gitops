@@ -35,9 +35,14 @@ spec:
         login: true
         passwordSecret:
           name: pg-pay
+      - name: tailor
+        ensure: present
+        login: true
+        passwordSecret:
+          name: pg-tailor
   postgresql:
     parameters:
-      # 4 apis x 4 replicas x 5 connections (DATABASE_POOL_MAX) = 80, plus the
+      # 5 apis x 4 replicas x 5 connections (DATABASE_POOL_MAX) = 100, plus the
       # migrate Jobs and the operator. PgBouncer (CNPG Pooler) when this is tight.
       max_connections: "200"
       shared_buffers: 128MB
@@ -87,6 +92,16 @@ spec:
     name: pg
   name: pay
   owner: pay
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: tailor
+spec:
+  cluster:
+    name: pg
+  name: tailor
+  owner: tailor
 ---
 # R2 through the S3 API. The endpoint carries the account ID, so it comes from
 # the sealed pg-r2 like the key; R2 needs the checksums only when required.

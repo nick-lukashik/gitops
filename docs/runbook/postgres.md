@@ -1,6 +1,6 @@
 # Postgres
 
-One CloudNativePG cluster `pg` in namespace `data` (`platform/data/stores/postgres.yaml`): one instance, a database and an owner role per api (`id`, `notifications`, `wallet`, `pay`). The services reach it at `pg-rw.data.svc:5432` with the URL of their `<service>-secrets`.
+One CloudNativePG cluster `pg` in namespace `data` (`platform/data/stores/postgres.yaml`): one instance, a database and an owner role per api (`id`, `notifications`, `wallet`, `pay`, `tailor`). The services reach it at `pg-rw.data.svc:5432` with the URL of their `<service>-secrets`.
 
 ## Look
 
@@ -127,4 +127,4 @@ The 14-day retention of the ObjectStore trims only the folder the cluster writes
 
 ## Connections
 
-`max_connections` 200. Each api pod keeps a pool of `DATABASE_POOL_MAX` (5): at 4 replicas of 4 apis that is 80. When connections get tight, a CNPG `Pooler` (PgBouncer, transaction mode) goes in front for the apps, while the migrate Jobs and pg-boss keep the direct `pg-rw` (session features: the per-connection timeouts the apps send, advisory locks).
+`max_connections` 200. Each api pod keeps a pool of `DATABASE_POOL_MAX` (5): at 4 replicas of 5 apis that is 100. When connections get tight, a CNPG `Pooler` (PgBouncer, transaction mode) goes in front for the apps, while the migrate Jobs and pg-boss keep the direct `pg-rw` (session features: the per-connection timeouts the apps send, advisory locks).

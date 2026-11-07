@@ -1,0 +1,19 @@
+# Local config for the components; never deployed.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: service
+  annotations:
+    config.kubernetes.io/local-config: "true"
+data:
+  name: tailor-api
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: route
+  annotations:
+    config.kubernetes.io/local-config: "true"
+data:
+  # The CV files: cv.<domain>/<code>. Only that is public (middleware.yaml).
+  subdomain: cv

@@ -1,0 +1,66 @@
+# Tailor (repo tailor-web) on tailor.<domain>: the applications from tailor-api
+# through the /api proxy. Read-only until sign-in lands (API_READ_ONLY).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: prod
+resources:
+  - service.yaml
+components:
+  - ../../../components/service
+  - ../../../components/web
+  - ../../../components/subdomain
+# Non-secret runtime env of the pods (envFrom).
+configMapGenerator:
+  - name: tailor-web-config
+    literals:
+      - LOG_LEVEL=info
+      # A personal tool for now: not in search engines.
+      - ROBOTS=noindex
+      - API_URL=http://tailor-api.prod.svc
+      # The proxy forwards only GET and HEAD: no writes without sign-in.
+      - API_READ_ONLY=true
+      # Filled from the settings and the route below: the domain lives only in components/settings.
+      - CV_URL=https://cv.DOMAIN
+      - SITE_URL=https://HOST
+images:
+  - name: ghcr.io/nick-lukashik/tailor-web
+    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+commonAnnotations:
+  nick-lukashik.com/source-sha: "0000000000000000000000000000000000000000"
+  nick-lukashik.com/source-repo: nick-lukashik/tailor-web
+replacements:
+  # SITE_URL=https://<host of the IngressRoute>.
+  - source:
+      kind: IngressRoute
+      fieldPath: metadata.annotations.nl-gitops/host
+    targets:
+      - select:
+          kind: ConfigMap
+          name: tailor-web-config
+        fieldPaths:
+          - data.SITE_URL
+        options:
+          delimiter: //
+          index: 1
+  # CV_URL=https://cv.<domain>: the host of tailor-api's route.
+  - source:
+      kind: Settings
+      name: settings
+      fieldPath: domain
+    targets:
+      - select:
+          kind: ConfigMap
+          name: tailor-web-config
+        fieldPaths:
+          - data.CV_URL
+        options:
+          delimiter: cv.
+          index: 1
+patches:
+  # The page and a call through the proxy to tailor-api: a broken backend fails the smoke.
+  - target:
+      kind: IngressRoute
+    patch: |-
+      - op: replace
+        path: /metadata/annotations/nl-gitops~1smoke-paths
+        value: "/ /api/v1/applications?limit=1"
