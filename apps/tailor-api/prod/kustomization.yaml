@@ -31,6 +31,7 @@ commonAnnotations:
   nick-lukashik.com/source-repo: nick-lukashik/tailor-api
 patches:
   # cv.<domain> reaches only the CV files (middleware.yaml), after the shared middlewares.
+  # The smoke reads the CV of the first demo application (tailor-api, migration 0001_demo_data).
   - target:
       kind: IngressRoute
     patch: |-
@@ -40,7 +41,7 @@ patches:
           name: tailor-api-cv
       - op: replace
         path: /metadata/annotations/nl-gitops~1smoke-paths
-        value: /demo
+        value: /019a5f00-0000-7000-8000-000000000001/Nick-Lukashik-Senior-Full-Stack-Engineer-CV.pdf
   # Who may call this api, one entry per caller. A caller missing here gets a timeout, and
   # only in prod: e2e runs without network policies.
   - target:

@@ -15,5 +15,5 @@ metadata:
   annotations:
     config.kubernetes.io/local-config: "true"
 data:
-  # The CV files: cv.<domain>/<code>. Only that is public (middleware.yaml).
+  # The CV files: cv.<domain>/<application id>/<Name-Role-CV>.pdf. Only that is public (middleware.yaml).
   subdomain: cv

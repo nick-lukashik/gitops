@@ -1,4 +1,4 @@
-# cv.<domain>/<code> -> /api/v1/cv/<code>. Every path of the host is rewritten
+# cv.<domain>/<id>/<file> -> /api/v1/cv/<id>/<file>. Every path of the host is rewritten
 # under /api/v1/cv, so nothing else of tailor-api (the applications, health,
 # OpenAPI) is reachable from the internet; tailor-web calls it inside the cluster.
 apiVersion: traefik.io/v1alpha1
