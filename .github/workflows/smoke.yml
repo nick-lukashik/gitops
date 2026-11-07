@@ -2,7 +2,7 @@
 # merging a deploy PR (or a rollback) is a push to master that changes
 # apps/<service>/prod/kustomization.yaml. For every such service this runs
 # smoke.yml@v1 of nick-lukashik/.github, which polls https://<host>/health/ready
-# until header x-app-version equals the deployed SHA (Argo CD polls git every
+# (or the route's nl-gitops/health-path) until header x-app-version equals the deployed SHA (Argo CD polls git every
 # 3 minutes and then syncs; smoke waits up to 10 minutes), then checks the
 # pages and reports to Telegram "Deploys". The URL is the host of the rendered
 # IngressRoute (annotation nl-gitops/host), the version and repository come
@@ -66,10 +66,19 @@ jobs:
                 echo "::error::$dir: nl-gitops/smoke-paths is required" >&2
                 exit 1
               fi
-              SERVICE=$service URL="https://$host" CHECK_PATHS="$paths" yq -o=json -I=0 '{
+              # Optional: a route that does not expose /health/ready (tailor-api on
+              # cv.<domain>) names another path that answers with x-app-version.
+              health=$(kustomize build "$dir" |
+                yq -N 'select(.kind == "IngressRoute") | .metadata.annotations["nl-gitops/health-path"] // "/health/ready"')
+              if [[ ! $health =~ ^/[A-Za-z0-9._~/-]*$ ]]; then
+                echo "::error::$dir: nl-gitops/health-path must be a plain path, got '$health'" >&2
+                exit 1
+              fi
+              SERVICE=$service URL="https://$host" CHECK_PATHS="$paths" HEALTH_PATH="$health" yq -o=json -I=0 '{
                 "service": strenv(SERVICE),
                 "url": strenv(URL),
                 "check-paths": strenv(CHECK_PATHS),
+                "health-path": strenv(HEALTH_PATH),
                 "version": ((.commonAnnotations // {}) | to_entries | map(select(.key | test("/source-sha$"))) | .[0].value // ""),
                 "repository": ((.commonAnnotations // {}) | to_entries | map(select(.key | test("/source-repo$"))) | .[0].value // "")
               }' "$f"
@@ -94,6 +103,7 @@ jobs:
       url: ${{ matrix.target.url }}
       version: ${{ matrix.target.version }}
       check-paths: ${{ matrix.target.check-paths }}
+      health-path: ${{ matrix.target.health-path }}
       # gitops has no access to the service packages; the HTTP checks remain.
       pnpm-smoke: false
     secrets:
