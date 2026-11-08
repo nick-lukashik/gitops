@@ -23,7 +23,7 @@ configMapGenerator:
       - TRUST_PROXY_HOPS=1
       # Who may use Tailor (D-112): user ids from id, comma-separated; empty is nobody.
       # The invitation page of tailor-web shows a person's id.
-      - TAILOR_USERS=
+      - TAILOR_USERS=01a1a869-8955-7beb-90c8-3f01e4fc7ce1
 # Images only by digest. The first digest and source-sha are set by hand from
 # the summary of job "image" of tailor-api; then the deploy PR keeps them current.
 images:
