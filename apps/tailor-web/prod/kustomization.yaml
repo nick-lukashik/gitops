@@ -26,9 +26,9 @@ configMapGenerator:
       - SITE_URL=https://HOST
 images:
   - name: ghcr.io/nick-lukashik/tailor-web
-    digest: sha256:8415299d77be37c0797e060f5f34af2ad998f534d1c274c1678ec5c9e44848a2
+    digest: sha256:4674d6fde4e004182f694e3afc1b41b7d973af067dc743770481b051bc33c53c
 commonAnnotations:
-  nick-lukashik.com/source-sha: "5cceb7fe4f95a56d294042de31b2bb3eaef214c0"
+  nick-lukashik.com/source-sha: "5177f22228e3635f0dbdaa132bce10a8731659ca"
   nick-lukashik.com/source-repo: nick-lukashik/tailor-web
 replacements:
   # ID_URL=https://id.<domain>: the settings' domain.
