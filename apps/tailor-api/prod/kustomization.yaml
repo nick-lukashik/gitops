@@ -21,6 +21,9 @@ configMapGenerator:
       - DATABASE_POOL_MAX=5
       # Behind Traefik: the client address of the CV requests.
       - TRUST_PROXY_HOPS=1
+      # Who may use Tailor (D-112): user ids from id, comma-separated; empty is nobody.
+      # The invitation page of tailor-web shows a person's id.
+      - TAILOR_USERS=
 # Images only by digest. The first digest and source-sha are set by hand from
 # the summary of job "image" of tailor-api; then the deploy PR keeps them current.
 images:
