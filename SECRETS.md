@@ -145,7 +145,7 @@ A value from Bitwarden that joins an existing `<service>-secrets` (Google, Resen
 
 ## Model gateway
 
-`llm-gateway-secrets` holds `DATABASE_URL` and, merged in by the owner, `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`) and `MINIMAX_API_KEY`. The Codex login is not a secret here: it lives on the volume `llm-gateway-login`, written by `codex login --device-auth` in the pod. A client of the gateway keeps its key as `LLM_GATEWAY_KEY` in its own secrets (made with `scripts/client-key.mjs` of llm-gateway, never printed); the gateway's ConfigMap holds only the key's SHA-256 in `LLM_CLIENTS`.
+`llm-gateway-secrets` holds `DATABASE_URL` and, merged in by the owner, `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`). The Codex login is not a secret here: it lives on the volume `llm-gateway-login`, written by `codex login --device-auth` in the pod. A client of the gateway keeps its key as `LLM_GATEWAY_KEY` in its own secrets (made with `scripts/client-key.mjs` of llm-gateway, never printed); the gateway's ConfigMap holds only the key's SHA-256 in `LLM_CLIENTS`.
 
 ## Service secrets
 
