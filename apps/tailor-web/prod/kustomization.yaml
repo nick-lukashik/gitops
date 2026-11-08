@@ -24,9 +24,9 @@ configMapGenerator:
       - SITE_URL=https://HOST
 images:
   - name: ghcr.io/nick-lukashik/tailor-web
-    digest: sha256:099cefb78d02f96c99bce428948f1f01aae3c2e88b7978e91dcd080602a13529
+    digest: sha256:5457c55d9b9d1208b116a8b048d5595414c7ae0a1a2ea04ef31038778ba66175
 commonAnnotations:
-  nick-lukashik.com/source-sha: "b9aa356edc3e6a6224833738d84c703a67df0230"
+  nick-lukashik.com/source-sha: "c78932a39399beefc97ae7620073ecfcef5c543d"
   nick-lukashik.com/source-repo: nick-lukashik/tailor-web
 replacements:
   # SITE_URL=https://<host of the IngressRoute>.
