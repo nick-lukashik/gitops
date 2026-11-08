@@ -1,6 +1,6 @@
 # Postgres
 
-One CloudNativePG cluster `pg` in namespace `data` (`platform/data/stores/postgres.yaml`): one instance, a database and an owner role per api (`id`, `notifications`, `wallet`, `pay`, `tailor`). The services reach it at `pg-rw.data.svc:5432` with the URL of their `<service>-secrets`.
+One CloudNativePG cluster `pg` in namespace `data` (`platform/data/stores/postgres.yaml`): one instance, a database and an owner role per api (`id`, `notifications`, `wallet`, `pay`, `tailor`, `llm`). The services reach it at `pg-rw.data.svc:5432` with the URL of their `<service>-secrets`.
 
 ## Look
 

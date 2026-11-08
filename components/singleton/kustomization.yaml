@@ -1,0 +1,29 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+# Exactly one pod, an exception to the service contract's two replicas: for a
+# service whose state cannot be shared between pods (llm-gateway: the Codex
+# login refreshes its token in a file on one volume, D-105). After
+# components/api and components/internal. The HorizontalPodAutoscaler goes,
+# the Deployment runs one replica and replaces it with Recreate (a
+# ReadWriteOnce volume cannot be mounted by two pods), so a rollout or a crash
+# stops the service until the new pod is ready: its callers must retry.
+patches:
+  - target:
+      kind: HorizontalPodAutoscaler
+    patch: |-
+      $patch: delete
+      apiVersion: autoscaling/v2
+      kind: HorizontalPodAutoscaler
+      metadata:
+        name: any
+  - target:
+      kind: Deployment
+      labelSelector: app.kubernetes.io/component=server
+    patch: |-
+      - op: add
+        path: /spec/replicas
+        value: 1
+      - op: replace
+        path: /spec/strategy
+        value:
+          type: Recreate

@@ -116,7 +116,7 @@ Namespace `data` (`platform/data/stores/secrets.sealedsecret.yaml`). Everything 
 
 | Secret | Keys | Used by |
 |---|---|---|
-| `pg-id`, `pg-notifications`, `pg-wallet`, `pg-pay`, `pg-tailor` | `username`, `password` (`kubernetes.io/basic-auth`) | the database owner of each api; `pg-id` bootstraps the cluster |
+| `pg-id`, `pg-notifications`, `pg-wallet`, `pg-pay`, `pg-tailor`, `pg-llm` | `username`, `password` (`kubernetes.io/basic-auth`) | the database owner of each api; `pg-id` bootstraps the cluster |
 | `redis-auth` | `password` | `requirepass` of Redis (id-api) |
 | `rabbitmq-definitions` | `definitions.json` | RabbitMQ users, one per api (SHA-256 password hashes), and their permissions |
 | `pg-r2` | `ACCESS_KEY_ID`, `ACCESS_SECRET_KEY`, `ENDPOINT` | Barman Cloud: base backups and WAL to R2 `nl-pg-backups` |
@@ -142,6 +142,10 @@ A value from Bitwarden that joins an existing `<service>-secrets` (Google, Resen
   kubectl create secret generic notifications-api-secrets -n prod --from-file=SMTP_URL=/dev/stdin --dry-run=client -o yaml |
   kubeseal --cert "$CRT" --format yaml --merge-into apps/notifications-api/prod/notifications-api-secrets.sealedsecret.yaml
 ```
+
+## Model gateway
+
+`llm-gateway-secrets` holds `DATABASE_URL` and, merged in by the owner, `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`) and `MINIMAX_API_KEY`. The Codex login is not a secret here: it lives on the volume `llm-gateway-login`, written by `codex login --device-auth` in the pod. A client of the gateway keeps its key as `LLM_GATEWAY_KEY` in its own secrets (made with `scripts/client-key.mjs` of llm-gateway, never printed); the gateway's ConfigMap holds only the key's SHA-256 in `LLM_CLIENTS`.
 
 ## Service secrets
 

@@ -1,0 +1,18 @@
+# The Codex login (CODEX_HOME): `codex login --device-auth` in the pod writes it
+# here, and the CLI refreshes its token in this folder, so one pod owns it
+# (components/singleton, D-105). Lost with the node's disk: log in again.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: llm-gateway-login
+  annotations:
+    # With the Deployment: local-path binds only when the pod is scheduled, and
+    # a Pending claim in an earlier wave would hold the sync forever.
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 64Mi
