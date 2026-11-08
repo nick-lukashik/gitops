@@ -15,8 +15,6 @@ configMapGenerator:
   - name: tailor-web-config
     literals:
       - LOG_LEVEL=info
-      # A personal tool for now: not in search engines.
-      - ROBOTS=noindex
       - API_URL=http://tailor-api.prod.svc
       - ID_API_URL=http://id-api.prod.svc
       # Filled from the route below: https://id.<domain>.
@@ -73,11 +71,12 @@ replacements:
           delimiter: cv.
           index: 1
 patches:
-  # The home page: every other page and the whole API need a signed-in person now,
-  # and the smoke check has none. tailor-api keeps its own smoke on the public CV route.
+  # robots.txt: every page and the whole API need a signed-in person with role
+  # tailor (D-113), the rest go to the landing, and the smoke check has no session.
+  # tailor-api keeps its own smoke on the public CV route.
   - target:
       kind: IngressRoute
     patch: |-
       - op: replace
         path: /metadata/annotations/nl-gitops~1smoke-paths
-        value: /
+        value: /robots.txt
