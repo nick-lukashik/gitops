@@ -10,6 +10,7 @@ Services. Every folder `apps/<service>/prod` becomes Application `<service>-prod
 | `id-web/prod` | the account site on `id.<domain>` (repo `id-web`) |
 | `tailor-web/prod` | Tailor on `tailor.<domain>` (repo `tailor-web`): read-only `/api` proxy to tailor-api until sign-in |
 | `tailor-api/prod` | the API of Tailor (repo `tailor-api`), database `tailor`. Its route is `cv.<domain>`, rewritten under `/api/v1/cv` by its own Middleware, so only the CV files are public |
+| `tailor-tex/prod` | Tailor's TeX service (repo `tailor-tex`), internal, no database: CV data to a PDF. Only tailor-api calls it |
 | `llm-gateway/prod` | the model gateway (repo `llm-gateway`), internal, database `llm`. One pod with the Codex login volume (`components/singleton`, D-105); callers listed in its folder |
 | `id-api/prod`, `notifications-api/prod`, `wallet-api/prod` | the account services, internal: no route (`components/internal`), reached by id-web and each other |
 | `digests/prod` | the daily digest of Google Analytics in the Telegram topic Digests (repo `digests`): a CronJob, no server |

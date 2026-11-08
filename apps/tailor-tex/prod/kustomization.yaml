@@ -1,0 +1,56 @@
+# Tailor TeX (repo tailor-tex): CV data to a PDF through XeLaTeX (D-96).
+# Internal: only tailor-api calls it, with INTERNAL_API_TOKEN (the same value
+# is TAILOR_TEX_TOKEN in tailor-api-secrets). No database: the migrate Job of
+# components/api runs a no-op.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: prod
+resources:
+  - service.yaml
+  - tailor-tex-secrets.sealedsecret.yaml
+components:
+  - ../../../components/service
+  - ../../../components/api
+  - ../../../components/internal
+configMapGenerator:
+  - name: tailor-tex-config
+    literals:
+      - LOG_LEVEL=info
+      # Two builds at once per pod; a third gets 429 at once (no queue).
+      - TEX_CONCURRENCY=2
+      - TEX_QUEUE_MAX=0
+      - TEX_TIMEOUT_MS=45000
+images:
+  - name: ghcr.io/nick-lukashik/tailor-tex
+    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+commonAnnotations:
+  nick-lukashik.com/source-sha: "0000000000000000000000000000000000000000"
+  nick-lukashik.com/source-repo: nick-lukashik/tailor-tex
+patches:
+  # XeLaTeX: two parallel two-page builds were killed below 448 MiB; 768 MiB leaves room.
+  - target:
+      kind: Deployment
+      labelSelector: app.kubernetes.io/component=server
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources
+        value:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            memory: 768Mi
+  # Who may call this api, one entry per caller.
+  - target:
+      kind: NetworkPolicy
+      labelSelector: app.kubernetes.io/component=server
+    patch: |-
+      - op: add
+        path: /spec/ingress/-
+        value:
+          from:
+            - podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: tailor-api
+          ports:
+            - port: http
