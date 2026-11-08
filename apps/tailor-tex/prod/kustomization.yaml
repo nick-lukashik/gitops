@@ -22,9 +22,9 @@ configMapGenerator:
       - TEX_TIMEOUT_MS=45000
 images:
   - name: ghcr.io/nick-lukashik/tailor-tex
-    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+    digest: sha256:a8c4cf028265866e467955657bd8a26316af457f5997f08e2f579eca90eb29b2
 commonAnnotations:
-  nick-lukashik.com/source-sha: "0000000000000000000000000000000000000000"
+  nick-lukashik.com/source-sha: "9851ddb7a936b75c7e1e9f4634ad8f12b07a7a59"
   nick-lukashik.com/source-repo: nick-lukashik/tailor-tex
 patches:
   # XeLaTeX: two parallel two-page builds were killed below 448 MiB; 768 MiB leaves room.
