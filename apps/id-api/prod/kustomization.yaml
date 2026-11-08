@@ -51,5 +51,12 @@ patches:
             - podSelector:
                 matchLabels:
                   app.kubernetes.io/name: wallet-api
+            # Tailor: the site reads /me and refreshes the session, the api reads the JWKS.
+            - podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: tailor-web
+            - podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: tailor-api
           ports:
             - port: http

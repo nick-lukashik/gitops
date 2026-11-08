@@ -1,5 +1,6 @@
 # Tailor (repo tailor-web) on tailor.<domain>: the applications from tailor-api
-# through the /api proxy. Read-only until sign-in lands (API_READ_ONLY).
+# through the /api proxy, signed in through id (the shared session cookie of
+# the domain, SESSION_SECRET from web-session via components/web).
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: prod
@@ -17,8 +18,9 @@ configMapGenerator:
       # A personal tool for now: not in search engines.
       - ROBOTS=noindex
       - API_URL=http://tailor-api.prod.svc
-      # The proxy forwards only GET and HEAD: no writes without sign-in.
-      - API_READ_ONLY=true
+      - ID_API_URL=http://id-api.prod.svc
+      # Filled from the route below: https://id.<domain>.
+      - ID_URL=https://id.HOST
       # Filled from the settings and the route below: the domain lives only in components/settings.
       - CV_URL=https://cv.DOMAIN
       - SITE_URL=https://HOST
@@ -29,6 +31,20 @@ commonAnnotations:
   nick-lukashik.com/source-sha: "b9aa356edc3e6a6224833738d84c703a67df0230"
   nick-lukashik.com/source-repo: nick-lukashik/tailor-web
 replacements:
+  # ID_URL=https://id.<domain>: the settings' domain.
+  - source:
+      kind: Settings
+      name: settings
+      fieldPath: domain
+    targets:
+      - select:
+          kind: ConfigMap
+          name: tailor-web-config
+        fieldPaths:
+          - data.ID_URL
+        options:
+          delimiter: https://id.
+          index: 1
   # SITE_URL=https://<host of the IngressRoute>.
   - source:
       kind: IngressRoute
