@@ -11,6 +11,7 @@ Kustomize components. They are never built on their own, only as part of `apps/`
 | `api/` | api kind (NestJS), after `service` |
 | `web/` | web kind (Next.js), after `service` |
 | `internal/` | after `api` instead of a host: no IngressRoute, no ingress from Traefik. For an api only the platform's pods call (the account services) |
+| `singleton/` | last, by a decision of the owner only (listed in `SINGLETONS` of `scripts/check-apps.sh`): one replica replaced with Recreate, no HorizontalPodAutoscaler. For state one pod must own (llm-gateway: the Codex login, D-105). A rollout or a crash stops the service until the new pod is ready |
 
 ## Services
 

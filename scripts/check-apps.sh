@@ -25,6 +25,9 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 THIRD_PARTY=" "
 # Built from the service image contract, but a CronJob rather than a server.
 JOBS=" digests "
+# Exactly one pod (components/singleton), each by a decision of the owner:
+# llm-gateway D-105 (the Codex login on one volume).
+SINGLETONS=" llm-gateway "
 TEMPLATES=(_example-web _example-api)
 REGISTRY=ghcr.io/nick-lukashik
 C=../../../components
@@ -152,7 +155,7 @@ for file in apps/*/prod/kustomization.yaml; do
   ' "/repo/$file")
 
   kind=""
-  internal=0
+  internal=0 singleton=0
   first=1
   for c in $components; do
     if [[ $first == 1 ]]; then
@@ -167,11 +170,16 @@ for file in apps/*/prod/kustomization.yaml; do
         ;;
       "$C/subdomain") ;;
       "$C/internal") internal=1 ;;
-      *) errors+=("unexpected component $c (after service: api or web, and subdomain or internal)") ;;
+      "$C/singleton") singleton=1 ;;
+      *) errors+=("unexpected component $c (after service: api or web, subdomain or internal, singleton)") ;;
     esac
   done
   [[ $first == 0 ]] || errors+=("components must start with $C/service")
   [[ -n $kind ]] || errors+=("needs exactly one of $C/api or $C/web")
+  if [[ $singleton == 1 ]]; then
+    [[ " $SINGLETONS " == *" $name "* ]] || errors+=("$C/singleton: $name is not in SINGLETONS of this script (an exception to two replicas needs a decision)")
+    [[ ${components##* } == "$C/singleton" ]] || errors+=("$C/singleton must come last")
+  fi
   if [[ $internal == 1 ]]; then
     [[ $kind == api ]] || errors+=("$C/internal is for an api")
     [[ " $components " != *" $C/subdomain "* ]] || errors+=("$C/internal has no host: drop $C/subdomain")
@@ -232,10 +240,16 @@ for file in apps/*/prod/kustomization.yaml; do
   done
 
   [[ $deployment == "$name" ]] || errors+=("build: expected one Deployment $name, got '$deployment'")
-  # Two replicas at least: the autoscaler owns the count, the Deployment sets none.
-  [[ $replicas == none ]] || errors+=("build: the Deployment must not set replicas (the HorizontalPodAutoscaler owns them), got '$replicas'")
-  if [[ $hpa =~ ^$name\ ([0-9]+)$ ]] && ((BASH_REMATCH[1] >= 2)); then :; else
-    errors+=("build: needs HorizontalPodAutoscaler $name with minReplicas >= 2, got '$hpa'")
+  if [[ $singleton == 1 ]]; then
+    # One pod, replaced with Recreate: components/singleton.
+    [[ $replicas == 1 ]] || errors+=("build: a singleton runs exactly 1 replica, got '$replicas'")
+    [[ -z $hpa ]] || errors+=("build: a singleton has no HorizontalPodAutoscaler, got '$hpa'")
+  else
+    # Two replicas at least: the autoscaler owns the count, the Deployment sets none.
+    [[ $replicas == none ]] || errors+=("build: the Deployment must not set replicas (the HorizontalPodAutoscaler owns them), got '$replicas'")
+    if [[ $hpa =~ ^$name\ ([0-9]+)$ ]] && ((BASH_REMATCH[1] >= 2)); then :; else
+      errors+=("build: needs HorizontalPodAutoscaler $name with minReplicas >= 2, got '$hpa'")
+    fi
   fi
   [[ $pdb == "$name" ]] || errors+=("build: needs PodDisruptionBudget $name, got '$pdb'")
   [[ $image =~ ^${REGISTRY//./\\.}/${name}@sha256:[0-9a-f]{64}$ ]] ||

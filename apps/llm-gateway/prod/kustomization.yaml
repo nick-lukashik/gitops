@@ -1,0 +1,70 @@
+# The model gateway (repo llm-gateway): every service calls models through it,
+# OpenAI-compatible, over the owner's subscriptions (D-95, D-102…D-110).
+# Internal, one pod with the Codex login volume (components/singleton).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: prod
+resources:
+  - service.yaml
+  - login.yaml
+  - llm-gateway-secrets.sealedsecret.yaml
+components:
+  - ../../../components/service
+  - ../../../components/api
+  - ../../../components/internal
+  - ../../../components/singleton
+# Non-secret runtime env. The clients' key hashes are not secrets: the keys
+# are sealed in each client's own secrets (scripts/client-key.mjs of llm-gateway).
+configMapGenerator:
+  - name: llm-gateway-config
+    literals:
+      - LOG_LEVEL=info
+      - DATABASE_POOL_MAX=5
+      - 'LLM_CLIENTS=[{"name":"tailor-api","keySha256":"eb290c3831c88298e48d17101d10813386a6158072c04b1dbd35b8c3fd394665","models":["*"],"admin":false}]'
+images:
+  - name: ghcr.io/nick-lukashik/llm-gateway
+    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+commonAnnotations:
+  nick-lukashik.com/source-sha: "0000000000000000000000000000000000000000"
+  nick-lukashik.com/source-repo: nick-lukashik/llm-gateway
+patches:
+  # The login volume at CODEX_HOME, and memory for the CLIs: a Codex or Claude
+  # run is a process of about 150 MiB, up to 3 per provider at once.
+  - target:
+      kind: Deployment
+      labelSelector: app.kubernetes.io/component=server
+    patch: |-
+      - op: add
+        path: /spec/template/spec/volumes/-
+        value:
+          name: login
+          persistentVolumeClaim:
+            claimName: llm-gateway-login
+      - op: add
+        path: /spec/template/spec/containers/0/volumeMounts/-
+        value:
+          name: login
+          mountPath: /codex-home
+      - op: replace
+        path: /spec/template/spec/containers/0/resources
+        value:
+          requests:
+            cpu: 100m
+            memory: 512Mi
+          limits:
+            memory: 2Gi
+  # Who may call this api, one entry per caller. A caller missing here gets a
+  # timeout, and only in prod: e2e runs without network policies.
+  - target:
+      kind: NetworkPolicy
+      labelSelector: app.kubernetes.io/component=server
+    patch: |-
+      - op: add
+        path: /spec/ingress/-
+        value:
+          from:
+            - podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: tailor-api
+          ports:
+            - port: http
