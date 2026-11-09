@@ -13,8 +13,14 @@ mkdir -p "$OUT/helm" "$CHARTS"
 pull_chart() {
   local tgz=$CHARTS/$2-$3.tgz
   if [[ ! -f $tgz ]]; then
-    helm pull "$2" --repo "$1" --version "$3" --destination "$(rel "$CHARTS")" >/dev/null ||
-      fail "helm pull $2 $3"
+    # GitHub Releases answer 504 for minutes at a time (09.11): retry with a pause.
+    local try
+    for try in 1 2 3 4 5; do
+      helm pull "$2" --repo "$1" --version "$3" --destination "$(rel "$CHARTS")" >/dev/null && break
+      [[ $try -lt 5 ]] || fail "helm pull $2 $3"
+      echo "helm pull $2 $3 failed, retry $try in $((try * 10)) s" >&2
+      sleep $((try * 10))
+    done
   fi
   rel "$tgz"
 }
