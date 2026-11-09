@@ -25,9 +25,9 @@ configMapGenerator:
 # the summary of job "image" of tailor-api; then the deploy PR keeps them current.
 images:
   - name: ghcr.io/nick-lukashik/tailor-api
-    digest: sha256:5fd2a96d9c3ce2892ca28cd61bf0d3b135d7e51692b859a99cc241fba66f4855
+    digest: sha256:ec3049cb7376f09322371e9440f57f606fa10e6d38d78894d125b28f2ba9026b
 commonAnnotations:
-  nick-lukashik.com/source-sha: "80ba633173b392f023b636ea995a7a51a6add78b"
+  nick-lukashik.com/source-sha: "6d6f963fa24d0a10235f6a410db7201dd1ecb313"
   nick-lukashik.com/source-repo: nick-lukashik/tailor-api
 patches:
   # cv.<domain> reaches only the CV files (middleware.yaml), after the shared middlewares.
