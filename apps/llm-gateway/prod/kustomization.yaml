@@ -23,9 +23,9 @@ configMapGenerator:
       - 'LLM_CLIENTS=[{"name":"tailor-api","keySha256":"eb290c3831c88298e48d17101d10813386a6158072c04b1dbd35b8c3fd394665","models":["*"],"admin":false}]'
 images:
   - name: ghcr.io/nick-lukashik/llm-gateway
-    digest: sha256:4abaded0dc87ecb936d0e609276b84cdc33912516542f3c084adf21cb0b4a264
+    digest: sha256:c057e55d2c97230abcebab02ada9dde28d7bcd3c3c40df945d59fca09aabbd19
 commonAnnotations:
-  nick-lukashik.com/source-sha: "4b2a0c35760ddc743b14ce4a279cb3a5eb0b5b5c"
+  nick-lukashik.com/source-sha: "b8a728bf08bd657c4802ec4173c1038c6c6511af"
   nick-lukashik.com/source-repo: nick-lukashik/llm-gateway
 patches:
   # The login volume at CODEX_HOME, and memory for the CLIs: a Codex or Claude
