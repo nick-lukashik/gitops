@@ -14,7 +14,7 @@ configMapGenerator:
 # The first digest and source-sha are set by hand; then the deploy PR keeps them current.
 images:
   - name: ghcr.io/nick-lukashik/digests
-    digest: sha256:874565f1e6a2cfef5d83355c47cb9ace0a4929bf5e8a97d0c9bcbd65824d7b6c
+    digest: sha256:4216114631ba4e12c3c82fbcb1cbca74545801c23a1f6eacde682da94df8b2eb
 commonAnnotations:
-  nick-lukashik.com/source-sha: "95ed29b8a6a4fb270be59444a81e67742bae97e7"
+  nick-lukashik.com/source-sha: "299dccf29b899835c7b253893b215202a044a4bc"
   nick-lukashik.com/source-repo: nick-lukashik/digests
