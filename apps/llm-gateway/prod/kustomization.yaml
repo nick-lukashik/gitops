@@ -51,10 +51,6 @@ patches:
         path: /spec/routes/0/middlewares/-
         value:
           name: llm-gateway-allow
-      - op: add
-        path: /spec/routes/0/middlewares/-
-        value:
-          name: llm-gateway-health
       - op: replace
         path: /metadata/annotations/nl-gitops~1smoke-paths
         value: /health/ready
