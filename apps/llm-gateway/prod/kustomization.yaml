@@ -1,17 +1,21 @@
 # The model gateway (repo llm-gateway): every service calls models through it,
 # OpenAI-compatible, over the owner's subscriptions (D-95, D-102…D-110).
-# Internal, one pod with the Codex login volume (components/singleton).
+# One pod with the Codex login volume (components/singleton). Services call it
+# inside the cluster; llm.<domain> exposes only the model routes for the stand
+# tests (D-171, middleware.yaml). To close it: back to components/internal
+# instead of components/subdomain, drop middleware.yaml and the route patch.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: prod
 resources:
   - service.yaml
   - login.yaml
+  - middleware.yaml
   - llm-gateway-secrets.sealedsecret.yaml
 components:
   - ../../../components/service
   - ../../../components/api
-  - ../../../components/internal
+  - ../../../components/subdomain
   - ../../../components/singleton
 # Non-secret runtime env. The clients' key hashes are not secrets: the keys
 # are sealed in each client's own secrets (scripts/client-key.mjs of llm-gateway).
@@ -20,6 +24,8 @@ configMapGenerator:
     literals:
       - LOG_LEVEL=info
       - DATABASE_POOL_MAX=5
+      # Behind Traefik on llm.<domain>: the client address in the logs.
+      - TRUST_PROXY_HOPS=1
       - 'LLM_CLIENTS=[{"name":"tailor-api","keySha256":"eb290c3831c88298e48d17101d10813386a6158072c04b1dbd35b8c3fd394665","models":["*"],"admin":false}]'
 images:
   - name: ghcr.io/nick-lukashik/llm-gateway
@@ -28,6 +34,30 @@ commonAnnotations:
   nick-lukashik.com/source-sha: "4b2a0c35760ddc743b14ce4a279cb3a5eb0b5b5c"
   nick-lukashik.com/source-repo: nick-lukashik/llm-gateway
 patches:
+  # llm.<domain>: the rate limit, then only the model routes reach the app
+  # (middleware.yaml). The smoke waits for the version on /health/ready.
+  - target:
+      kind: IngressRoute
+    patch: |-
+      - op: add
+        path: /spec/routes/0/middlewares/-
+        value:
+          name: llm-gateway-rate
+      - op: add
+        path: /spec/routes/0/middlewares/-
+        value:
+          name: llm-gateway-block
+      - op: add
+        path: /spec/routes/0/middlewares/-
+        value:
+          name: llm-gateway-allow
+      - op: add
+        path: /spec/routes/0/middlewares/-
+        value:
+          name: llm-gateway-health
+      - op: replace
+        path: /metadata/annotations/nl-gitops~1smoke-paths
+        value: /health/ready
   # The login volume at CODEX_HOME, and memory for the CLIs: a Codex or Claude
   # run is a process of about 150 MiB, up to 3 per provider at once.
   - target:
