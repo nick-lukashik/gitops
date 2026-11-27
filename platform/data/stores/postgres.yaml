@@ -47,7 +47,7 @@ spec:
           name: pg-llm
   postgresql:
     parameters:
-      # 5 apis x 4 replicas x 5 connections (DATABASE_POOL_MAX) = 100, llm-gateway 1 x 5, plus the
+      # 5 apis x 4 replicas x 5 connections (DATABASE_POOL_MAX) = 100, llm-gateway 1 x (5 + 8 pg-boss), plus the
       # migrate Jobs and the operator. PgBouncer (CNPG Pooler) when this is tight.
       max_connections: "200"
       shared_buffers: 128MB

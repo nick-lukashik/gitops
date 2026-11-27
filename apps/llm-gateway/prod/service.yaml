@@ -7,3 +7,13 @@ metadata:
     config.kubernetes.io/local-config: "true"
 data:
   name: llm-gateway
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: route
+  annotations:
+    config.kubernetes.io/local-config: "true"
+data:
+  # The external route for stand tests (D-171): llm.<domain>/v1, model routes only (middleware.yaml).
+  subdomain: llm

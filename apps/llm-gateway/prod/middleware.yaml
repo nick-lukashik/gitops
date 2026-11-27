@@ -1,0 +1,39 @@
+# llm.<domain>: the external route for tests from the stand (D-171). Only the
+# model routes are reachable, at the same paths as inside the cluster (OpenAI
+# base URL https://llm.<domain>/api/v1): every path is first moved under
+# /blocked (the app answers 404 there), then the allowed ones are moved back.
+# Admin routes, providers, /docs and /openapi.json stay inside the cluster.
+# Every call still needs a client key (LLM_CLIENTS); the gateway's daily token
+# limit caps a client.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: llm-gateway-block
+spec:
+  replacePathRegex:
+    regex: ^/(.*)$
+    replacement: /blocked/$1
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: llm-gateway-allow
+spec:
+  replacePathRegex:
+    # /health/ready: the readiness the deploy smoke waits for.
+    regex: ^/blocked/(api/v1/(?:chat/completions|models|jobs|jobs/[0-9a-f-]{36})|health/ready)$
+    replacement: /$1
+---
+# Per client address (X-Real-Ip, set from CF-Connecting-IP by real-ip@file):
+# 120 requests a minute, bursts of 60, enough to poll a few jobs every 2 s.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: llm-gateway-rate
+spec:
+  rateLimit:
+    average: 120
+    period: 1m
+    burst: 60
+    sourceCriterion:
+      requestHeaderName: X-Real-Ip
